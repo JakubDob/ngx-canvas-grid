@@ -21,7 +21,7 @@ import {
   selector: "ngx-canvas-grid",
   standalone: true,
   imports: [],
-  template: ` <canvas #canvas></canvas>`,
+  template: `<canvas #canvas></canvas>`,
   styles: `
     canvas {
       display: block;
