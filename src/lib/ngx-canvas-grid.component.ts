@@ -21,15 +21,13 @@ import {
   selector: "ngx-canvas-grid",
   standalone: true,
   imports: [],
-  template: ` <canvas
-    #canvas
-    [style.backgroundColor]="backgroundColor"
-    [style.cursor]="cursorStyle"
-    tabindex="0"
-  ></canvas>`,
+  template: ` <canvas #canvas></canvas>`,
   styles: `
     canvas {
       display: block;
+      background: var(--canvas-background, black);
+      cursor: var(--canvas-cursor, cell);
+      tabindex: var(--canvas-tabindex, 0);
     }
   `,
 })
@@ -55,13 +53,12 @@ export class NgxCanvasGridComponent {
     this._spacing = value;
     this.recalculate();
   }
-  @Input("cursor") cursorStyle: string = "cell";
-  @Input("backgroundColor") backgroundColor: string = "white";
+
   @Input("cellRenderFn") cellRenderFn!: CanvasGridCellRenderFn;
   @Input("singleFrameIndices") singleFrameIndices: Set<number> = new Set();
   @Input("multiFrameIndices") multiFrameIndices: Set<number> = new Set();
   @Input("redrawAll") redrawAll: Boolean = false;
-  @Input("fpsThrottle") fpsThrottle: number = 20;
+  @Input("fpsThrottle") fpsThrottle?: number;
 
   @Output() moveOnCellEvent = new EventEmitter<number>();
   @Output() singleClickCellEvent = new EventEmitter<GridClickEvent>();
@@ -227,7 +224,7 @@ export class NgxCanvasGridComponent {
     const fps = 1000 / dt;
     this.deltaTime = dt / 1000;
     this.elapsedTime += this.deltaTime;
-    if (fps < this.fpsThrottle) {
+    if (this.fpsThrottle !== undefined && fps < this.fpsThrottle) {
       if (this.redrawAll) {
         for (let i = 0; i < this._length; ++i) {
           this.renderCell(i);
