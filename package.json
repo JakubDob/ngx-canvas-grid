@@ -1,5 +1,5 @@
 {
-  "name": "ngx-canvas-grid",
+  "name": "@jakubdob/ngx-canvas-grid",
   "version": "0.0.1",
   "peerDependencies": {
     "@angular/common": "^17.1.0",
