@@ -10,6 +10,8 @@ import {
 } from "@angular/core";
 import {
   CanvasGridCellRenderFn,
+  CanvasGridDefaultOptions,
+  CANVAS_GRID_DEFAULT_OPTIONS,
   GridClickEvent,
   GridDragEvent,
   Point2D,
@@ -17,27 +19,63 @@ import {
   RenderTextParams,
 } from "./ngx-canvas-grid.types";
 
+const DEFAULT_CELL_WIDTH = 20;
+const DEFAULT_CELL_HEIGHT = 20;
+const DEFAULT_ROWS = 9;
+const DEFAULT_COLS = 9;
+const DEFAULT_SPACING = 1;
+const DEFAULT_BACKGROUND = "black";
+const DEFAULT_CURSOR = "cell";
+
 @Component({
   selector: "ngx-canvas-grid",
   standalone: true,
   imports: [],
-  template: `<canvas #canvas></canvas>`,
+  template: `<canvas #canvas tabindex="0"></canvas>`,
   styles: `
     canvas {
       display: block;
-      background: var(--canvas-background, black);
-      cursor: var(--canvas-cursor, cell);
-      tabindex: var(--canvas-tabindex, 0);
+      background: var(--canvas-background, DEFAULT_BACKGROUND);
+      cursor: var(--canvas-cursor, DEFAULT_CURSOR);
     }
   `,
 })
 export class NgxCanvasGridComponent {
+  private _defaults: CanvasGridDefaultOptions | null = inject(
+    CANVAS_GRID_DEFAULT_OPTIONS,
+    { optional: true }
+  );
+  private _cellWidth: number;
+  private _cellHeight: number;
+  private _rows: number;
+  private _cols: number;
+  private _spacing: number;
+  private _length: number;
+  private context!: CanvasRenderingContext2D;
+  private ngZone: NgZone = inject(NgZone);
+  private redrawIndices: Set<number> = new Set();
+  private pressedIndex: number | null = null;
+  private isDragging: boolean = false;
+  private lastRenderTime: number = 0;
+  private deltaTime: number = 0;
+  private elapsedTime: number = 0;
+
+  constructor() {
+    this._cellWidth = this._defaults?.cellWidth ?? DEFAULT_CELL_WIDTH;
+    this._cellHeight = this._defaults?.cellHeight ?? DEFAULT_CELL_HEIGHT;
+    this._rows = this._defaults?.rows ?? DEFAULT_ROWS;
+    this._cols = this._defaults?.cols ?? DEFAULT_COLS;
+    this._spacing = this._defaults?.spacing ?? DEFAULT_SPACING;
+    this.fpsThrottle = this._defaults?.fpsThrottle;
+    this._length = this._rows * this._cols;
+  }
+
   @ViewChild("canvas") private canvas!: ElementRef<HTMLCanvasElement>;
-  @Input("cellWidth") set canvasWidth(value: number) {
+  @Input("cellWidth") set cellWidth(value: number) {
     this._cellWidth = Math.floor(value);
     this.recalculate();
   }
-  @Input("cellHeight") set canvasHeight(value: number) {
+  @Input("cellHeight") set cellHeight(value: number) {
     this._cellHeight = Math.floor(value);
     this.recalculate();
   }
@@ -54,10 +92,8 @@ export class NgxCanvasGridComponent {
     this.recalculate();
   }
 
-  @Input("cellRenderFn") cellRenderFn!: CanvasGridCellRenderFn;
-  @Input("singleFrameIndices") singleFrameIndices: Set<number> = new Set();
-  @Input("multiFrameIndices") multiFrameIndices: Set<number> = new Set();
-  @Input("redrawAll") redrawAll: Boolean = false;
+  @Input({ alias: "cellRenderFn", required: true })
+  cellRenderFn!: CanvasGridCellRenderFn;
   @Input("fpsThrottle") fpsThrottle?: number;
 
   @Output() moveOnCellEvent = new EventEmitter<number>();
@@ -73,6 +109,9 @@ export class NgxCanvasGridComponent {
   private boundOnDoubleClick = this.onDoubleClick.bind(this);
   private boundOnKeyDown = this.onKeyDown.bind(this);
   private boundOnContextMenu = this.onContextMenu.bind(this);
+  private singleFrameIndices: Set<number> = new Set();
+  private multiFrameIndices: Set<number> = new Set();
+  private shouldRedrawAll: boolean = false;
 
   ngAfterViewInit() {
     const canvasElement = this.canvas.nativeElement;
@@ -139,16 +178,42 @@ export class NgxCanvasGridComponent {
     );
   }
 
-  onKeyDown(event: KeyboardEvent) {
+  public addCellIndexToSingleFrameRedraw(index: number) {
+    this.singleFrameIndices.add(index);
+  }
+
+  public addCellIndexToMultiFrameRedraw(index: number) {
+    this.multiFrameIndices.add(index);
+  }
+
+  public deleteCellIndexFromMultiFrameRedraw(index: number) {
+    this.multiFrameIndices.delete(index);
+  }
+
+  public clearIndicesFromMultiFrameRedraw() {
+    this.multiFrameIndices.clear();
+  }
+
+  public redrawAll() {
+    this.context.clearRect(
+      0,
+      0,
+      this.canvas.nativeElement.width,
+      this.canvas.nativeElement.height
+    );
+    this.shouldRedrawAll = true;
+  }
+
+  private onKeyDown(event: KeyboardEvent) {
     this.keyDownEvent.emit(event.key);
   }
 
-  onContextMenu(event: MouseEvent) {
+  private onContextMenu(event: MouseEvent) {
     event.stopPropagation();
     event.preventDefault();
   }
 
-  onMouseMove(event: MouseEvent) {
+  private onMouseMove(event: MouseEvent) {
     const cellIndex = this.getCellIndexFromEvent(event);
     if (cellIndex !== null) {
       this.moveOnCellEvent.emit(cellIndex);
@@ -165,7 +230,7 @@ export class NgxCanvasGridComponent {
     event.preventDefault();
   }
 
-  onMouseDown(event: MouseEvent) {
+  private onMouseDown(event: MouseEvent) {
     const cellIndex = this.getCellIndexFromEvent(event);
     if (cellIndex !== null) {
       this.pressedIndex = cellIndex;
@@ -175,7 +240,7 @@ export class NgxCanvasGridComponent {
     this.canvas.nativeElement.focus();
   }
 
-  onMouseUp(event: MouseEvent) {
+  private onMouseUp(event: MouseEvent) {
     const cellIndex = this.getCellIndexFromEvent(event);
     if (cellIndex !== null) {
       if (this.pressedIndex === cellIndex) {
@@ -194,7 +259,7 @@ export class NgxCanvasGridComponent {
     event.preventDefault();
   }
 
-  onDoubleClick(event: MouseEvent) {
+  private onDoubleClick(event: MouseEvent) {
     const cellIndex = this.getCellIndexFromEvent(event);
     if (cellIndex !== null) {
       this.doubleClickCellEvent.emit(cellIndex);
@@ -204,32 +269,17 @@ export class NgxCanvasGridComponent {
     this.canvas.nativeElement.focus();
   }
 
-  private _cellWidth: number = 20;
-  private _cellHeight: number = 20;
-  private _rows: number = 9;
-  private _cols: number = 9;
-  private _spacing: number = 1;
-  private _length: number = this._rows * this._cols;
-  private context!: CanvasRenderingContext2D;
-  private ngZone: NgZone = inject(NgZone);
-  private redrawIndices: Set<number> = new Set();
-  private pressedIndex: number | null = null;
-  private isDragging: boolean = false;
-  private lastRenderTime: number = 0;
-  private deltaTime: number = 0;
-  private elapsedTime: number = 0;
-
   private render(timestamp: DOMHighResTimeStamp): void {
     const dt = timestamp - this.lastRenderTime;
     const fps = 1000 / dt;
     this.deltaTime = dt / 1000;
     this.elapsedTime += this.deltaTime;
-    if (this.fpsThrottle !== undefined && fps < this.fpsThrottle) {
-      if (this.redrawAll) {
+    if (this.fpsThrottle === undefined || fps < this.fpsThrottle) {
+      if (this.shouldRedrawAll) {
         for (let i = 0; i < this._length; ++i) {
           this.renderCell(i);
         }
-        this.redrawAll = false;
+        this.shouldRedrawAll = false;
       } else {
         this.singleFrameIndices.forEach((index) =>
           this.redrawIndices.add(index)
@@ -328,16 +378,6 @@ export class NgxCanvasGridComponent {
     return null;
   }
 
-  private queryRedrawAll() {
-    this.context.clearRect(
-      0,
-      0,
-      this.canvas.nativeElement.width,
-      this.canvas.nativeElement.height
-    );
-    this.redrawAll = true;
-  }
-
   private recalculate() {
     if (this.canvas) {
       this._length = this._rows * this._cols;
@@ -345,7 +385,7 @@ export class NgxCanvasGridComponent {
         (this._cellWidth + this._spacing) * this._cols - this._spacing;
       this.canvas.nativeElement.height =
         (this._cellHeight + this._spacing) * this._rows - this._spacing;
-      this.queryRedrawAll();
+      this.redrawAll();
     }
   }
 }

@@ -1,3 +1,5 @@
+import { InjectionToken } from "@angular/core";
+
 export type RenderTextParams = {
   text: string;
   font: string;
@@ -39,3 +41,15 @@ export type GridClickEvent = {
 export type CanvasGridCellRenderFn = (
   params: CanvasGridCellRenderParams
 ) => void;
+
+export type CanvasGridDefaultOptions = {
+  cellWidth?: number;
+  cellHeight?: number;
+  rows?: number;
+  cols?: number;
+  spacing?: number;
+  fpsThrottle?: number;
+};
+
+export const CANVAS_GRID_DEFAULT_OPTIONS =
+  new InjectionToken<CanvasGridDefaultOptions>("CANVAS_GRID_DEFAULT_OPTIONS");
