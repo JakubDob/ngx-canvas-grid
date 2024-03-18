@@ -29,13 +29,20 @@ export type CanvasGridCellRenderParams = {
 };
 
 export type GridDragEvent = {
+  buttonId: number;
+  from: number;
+  to: number;
+};
+
+export type GridDropEvent = {
+  buttonId: number;
   from: number;
   to: number;
 };
 
 export type GridClickEvent = {
-  index: number;
   buttonId: number;
+  cellIndex: number;
 };
 
 export type CanvasGridCellRenderFn = (

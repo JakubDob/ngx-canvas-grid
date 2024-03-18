@@ -14,6 +14,7 @@ import {
   CANVAS_GRID_DEFAULT_OPTIONS,
   GridClickEvent,
   GridDragEvent,
+  GridDropEvent,
   Point2D,
   Rect,
   RenderTextParams,
@@ -55,7 +56,8 @@ export class NgxCanvasGridComponent {
   private ngZone: NgZone = inject(NgZone);
   private redrawIndices: Set<number> = new Set();
   private pressedIndex: number | null = null;
-  private isDragging: boolean = false;
+  private downButtonId: number | null = null;
+  private draggingButtonId: number | null = null;
   private lastRenderTime: number = 0;
   private deltaTime: number = 0;
   private elapsedTime: number = 0;
@@ -98,9 +100,9 @@ export class NgxCanvasGridComponent {
 
   @Output() moveOnCellEvent = new EventEmitter<number>();
   @Output() singleClickCellEvent = new EventEmitter<GridClickEvent>();
+  @Output() doubleClickCellEvent = new EventEmitter<GridClickEvent>();
   @Output() dragCellEvent = new EventEmitter<GridDragEvent>();
-  @Output() dropCellEvent = new EventEmitter<number>();
-  @Output() doubleClickCellEvent = new EventEmitter<number>();
+  @Output() dropCellEvent = new EventEmitter<GridDropEvent>();
   @Output() keyDownEvent = new EventEmitter<string>();
 
   private boundOnMouseMove = this.onMouseMove.bind(this);
@@ -218,9 +220,10 @@ export class NgxCanvasGridComponent {
     if (cellIndex !== null) {
       this.moveOnCellEvent.emit(cellIndex);
 
-      if (this.pressedIndex !== null) {
-        this.isDragging = true;
+      if (this.pressedIndex !== null && this.downButtonId !== null) {
+        this.draggingButtonId = this.downButtonId;
         this.dragCellEvent.emit({
+          buttonId: this.draggingButtonId,
           from: this.pressedIndex,
           to: cellIndex,
         });
@@ -232,6 +235,7 @@ export class NgxCanvasGridComponent {
 
   private onMouseDown(event: MouseEvent) {
     const cellIndex = this.getCellIndexFromEvent(event);
+    this.downButtonId = event.button;
     if (cellIndex !== null) {
       this.pressedIndex = cellIndex;
     }
@@ -245,13 +249,22 @@ export class NgxCanvasGridComponent {
     if (cellIndex !== null) {
       if (this.pressedIndex === cellIndex) {
         this.singleClickCellEvent.emit({
-          index: cellIndex,
+          cellIndex: cellIndex,
           buttonId: event.button,
         });
       }
-      if (this.isDragging) {
-        this.isDragging = false;
-        this.dropCellEvent.emit(cellIndex);
+      if (this.draggingButtonId === event.button) {
+        this.draggingButtonId = null;
+        if (this.pressedIndex !== null) {
+          this.dropCellEvent.emit({
+            buttonId: event.button,
+            from: this.pressedIndex,
+            to: cellIndex,
+          });
+        }
+      }
+      if (this.downButtonId === event.button) {
+        this.downButtonId = null;
       }
       this.pressedIndex = null;
     }
@@ -262,7 +275,10 @@ export class NgxCanvasGridComponent {
   private onDoubleClick(event: MouseEvent) {
     const cellIndex = this.getCellIndexFromEvent(event);
     if (cellIndex !== null) {
-      this.doubleClickCellEvent.emit(cellIndex);
+      this.doubleClickCellEvent.emit({
+        buttonId: event.button,
+        cellIndex: cellIndex,
+      });
     }
     event.stopPropagation();
     event.preventDefault();
