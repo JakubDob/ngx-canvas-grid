@@ -6,6 +6,7 @@ import {
   Input,
   NgZone,
   Output,
+  signal,
   ViewChild,
 } from "@angular/core";
 import {
@@ -57,10 +58,12 @@ export class NgxCanvasGridComponent {
   private redrawIndices: Set<number> = new Set();
   private pressedIndex: number | null = null;
   private downButtonId: number | null = null;
-  private draggingButtonId: number | null = null;
   private lastRenderTime: number = 0;
   private deltaTime: number = 0;
   private elapsedTime: number = 0;
+  private _draggingButtonId = signal<number | null>(null);
+
+  public readonly draggingButtonId = this._draggingButtonId.asReadonly();
 
   constructor() {
     this._cellWidth = this._defaults?.cellWidth ?? DEFAULT_CELL_WIDTH;
@@ -221,9 +224,9 @@ export class NgxCanvasGridComponent {
       this.moveOnCellEvent.emit(cellIndex);
 
       if (this.pressedIndex !== null && this.downButtonId !== null) {
-        this.draggingButtonId = this.downButtonId;
+        this._draggingButtonId.set(this.downButtonId);
         this.dragCellEvent.emit({
-          buttonId: this.draggingButtonId,
+          buttonId: this.downButtonId,
           from: this.pressedIndex,
           to: cellIndex,
         });
@@ -253,8 +256,8 @@ export class NgxCanvasGridComponent {
           buttonId: event.button,
         });
       }
-      if (this.draggingButtonId === event.button) {
-        this.draggingButtonId = null;
+      if (this._draggingButtonId() === event.button) {
+        this._draggingButtonId.set(null);
         if (this.pressedIndex !== null) {
           this.dropCellEvent.emit({
             buttonId: event.button,
