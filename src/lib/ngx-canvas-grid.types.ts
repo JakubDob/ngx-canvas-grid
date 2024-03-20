@@ -19,6 +19,11 @@ export type Point2D = {
   y: number;
 };
 
+export type Extent = {
+  w: number;
+  h: number;
+};
+
 export type CanvasGridCellRenderParams = {
   context: CanvasRenderingContext2D;
   renderTextFn: (params: RenderTextParams) => void;

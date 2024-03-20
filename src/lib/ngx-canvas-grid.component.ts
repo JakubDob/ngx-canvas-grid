@@ -13,6 +13,7 @@ import {
   CanvasGridCellRenderFn,
   CanvasGridDefaultOptions,
   CANVAS_GRID_DEFAULT_OPTIONS,
+  Extent,
   GridClickEvent,
   GridDragEvent,
   GridDropEvent,
@@ -107,6 +108,7 @@ export class NgxCanvasGridComponent {
   @Output() dragCellEvent = new EventEmitter<GridDragEvent>();
   @Output() dropCellEvent = new EventEmitter<GridDropEvent>();
   @Output() keyDownEvent = new EventEmitter<string>();
+  @Output() canvasSizeChangedEvent = new EventEmitter<Extent>();
 
   private boundOnMouseMove = this.onMouseMove.bind(this);
   private boundOnMouseDown = this.onMouseDown.bind(this);
@@ -207,6 +209,22 @@ export class NgxCanvasGridComponent {
       this.canvas.nativeElement.height
     );
     this.shouldRedrawAll = true;
+  }
+
+  public getCellRectFromRowCol(cellRow: number, cellCol: number): Rect {
+    const cellPos = this.getCellTopLeft(cellRow, cellCol);
+    return {
+      x: cellPos.x,
+      y: cellPos.y,
+      w: this._cellWidth,
+      h: this._cellHeight,
+    };
+  }
+
+  public getCellRectFromIndex(cellIndex: number): Rect {
+    const cellRow = Math.floor(cellIndex / this._cols);
+    const cellCol = cellIndex % this._cols;
+    return this.getCellRectFromRowCol(cellRow, cellCol);
   }
 
   private onKeyDown(event: KeyboardEvent) {
@@ -318,20 +336,11 @@ export class NgxCanvasGridComponent {
   }
 
   private renderCell(cellIndex: number) {
-    const cellRow = Math.floor(cellIndex / this._cols);
-    const cellCol = cellIndex % this._cols;
-    const cellPos = this.getCellTopLeft(cellRow, cellCol);
-    const cellRect: Rect = {
-      x: cellPos.x,
-      y: cellPos.y,
-      w: this._cellWidth,
-      h: this._cellHeight,
-    };
     this.cellRenderFn({
       context: this.context,
       renderTextFn: this.renderText,
       cellIndex: cellIndex,
-      cellRect: cellRect,
+      cellRect: this.getCellRectFromIndex(cellIndex),
       deltaTime: this.deltaTime,
       elapsedTime: this.elapsedTime,
     });
@@ -405,6 +414,11 @@ export class NgxCanvasGridComponent {
       this.canvas.nativeElement.height =
         (this._cellHeight + this._spacing) * this._rows - this._spacing;
       this.redrawAll();
+
+      this.canvasSizeChangedEvent.emit({
+        h: this.canvas.nativeElement.height,
+        w: this.canvas.nativeElement.width,
+      });
     }
   }
 }
