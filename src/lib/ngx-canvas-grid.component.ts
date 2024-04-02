@@ -14,6 +14,7 @@ import {
   CanvasGridDefaultOptions,
   CANVAS_GRID_DEFAULT_OPTIONS,
   Extent,
+  CanvasGridGapFn,
   GridClickEvent,
   GridDragEvent,
   GridDropEvent,
@@ -26,8 +27,9 @@ const DEFAULT_CELL_WIDTH = 20;
 const DEFAULT_CELL_HEIGHT = 20;
 const DEFAULT_ROWS = 9;
 const DEFAULT_COLS = 9;
-const DEFAULT_SPACING = 1;
-const DEFAULT_BACKGROUND = "black";
+const DEFAULT_GAP_SIZE = 1;
+const DEFAULT_GAP_COLOR = "black";
+const DEFAULT_BACKGROUND = "gray";
 const DEFAULT_CURSOR = "cell";
 
 @Component({
@@ -48,12 +50,16 @@ export class NgxCanvasGridComponent {
     CANVAS_GRID_DEFAULT_OPTIONS,
     { optional: true }
   );
-  private _cellWidth: number;
-  private _cellHeight: number;
-  private _rows: number;
-  private _cols: number;
-  private _spacing: number;
-  private _length: number;
+  private _cellWidth: number = this._defaults?.cellWidth ?? DEFAULT_CELL_WIDTH;
+  private _cellHeight: number =
+    this._defaults?.cellHeight ?? DEFAULT_CELL_HEIGHT;
+  private _rows: number = this._defaults?.rows ?? DEFAULT_ROWS;
+  private _cols: number = this._defaults?.cols ?? DEFAULT_COLS;
+  private _gapSize: number = this._defaults?.gapSize ?? DEFAULT_GAP_SIZE;
+  private _gapColor: string = this._defaults?.gapColor ?? DEFAULT_GAP_COLOR;
+  private _verticalGapFn?: CanvasGridGapFn;
+  private _horizontalGapFn?: CanvasGridGapFn;
+  private _length: number = this._rows * this._cols;
   private context!: CanvasRenderingContext2D;
   private ngZone: NgZone = inject(NgZone);
   private redrawIndices: Set<number> = new Set();
@@ -65,16 +71,6 @@ export class NgxCanvasGridComponent {
   private _draggingButtonId = signal<number | null>(null);
 
   public readonly draggingButtonId = this._draggingButtonId.asReadonly();
-
-  constructor() {
-    this._cellWidth = this._defaults?.cellWidth ?? DEFAULT_CELL_WIDTH;
-    this._cellHeight = this._defaults?.cellHeight ?? DEFAULT_CELL_HEIGHT;
-    this._rows = this._defaults?.rows ?? DEFAULT_ROWS;
-    this._cols = this._defaults?.cols ?? DEFAULT_COLS;
-    this._spacing = this._defaults?.spacing ?? DEFAULT_SPACING;
-    this.fpsThrottle = this._defaults?.fpsThrottle;
-    this._length = this._rows * this._cols;
-  }
 
   @ViewChild("canvas") private canvas!: ElementRef<HTMLCanvasElement>;
   @Input("cellWidth") set cellWidth(value: number) {
@@ -93,14 +89,35 @@ export class NgxCanvasGridComponent {
     this._cols = value;
     this.recalculate();
   }
-  @Input("spacing") set spacing(value: number) {
-    this._spacing = value;
+  @Input("gapSize") set gapSize(value: number) {
+    this._gapSize = value;
     this.recalculate();
+  }
+
+  @Input("gapColor") set gapColor(value: string) {
+    this._gapColor = value;
+    if (this.canvas) {
+      this.renderGaps();
+    }
+  }
+
+  @Input("verticalGapFn") set verticalGapFn(value: CanvasGridGapFn) {
+    this._verticalGapFn = value;
+    if (this.canvas) {
+      this.renderGaps();
+    }
+  }
+
+  @Input("horizontalGapFn") set horizontalGapFn(value: CanvasGridGapFn) {
+    this._horizontalGapFn = value;
+    if (this.canvas) {
+      this.renderGaps();
+    }
   }
 
   @Input({ alias: "cellRenderFn", required: true })
   cellRenderFn!: CanvasGridCellRenderFn;
-  @Input("fpsThrottle") fpsThrottle?: number;
+  @Input("fpsThrottle") fpsThrottle?: number = this._defaults?.fpsThrottle;
 
   @Output() moveOnCellEvent = new EventEmitter<number>();
   @Output() singleClickCellEvent = new EventEmitter<GridClickEvent>();
@@ -316,6 +333,7 @@ export class NgxCanvasGridComponent {
         for (let i = 0; i < this._length; ++i) {
           this.renderCell(i);
         }
+        this.renderGaps();
         this.shouldRedrawAll = false;
       } else {
         this.singleFrameIndices.forEach((index) =>
@@ -346,6 +364,39 @@ export class NgxCanvasGridComponent {
     });
   }
 
+  private renderGaps() {
+    if (this._gapSize < 1) {
+      return;
+    }
+    this.context.strokeStyle = this._gapColor;
+    this.context.lineWidth = this._gapSize;
+    this.context.beginPath();
+    const halfGap = this._gapSize / 2;
+    if (this._horizontalGapFn && this._rows > 1) {
+      const yOffset = this._cellHeight + halfGap;
+      let currentY = yOffset;
+      for (let row = 1; row < this._rows; ++row) {
+        if (this._horizontalGapFn(row)) {
+          this.context.moveTo(0, currentY);
+          this.context.lineTo(this.canvas.nativeElement.width, currentY);
+        }
+        currentY += yOffset + halfGap;
+      }
+    }
+    if (this._verticalGapFn && this._cols > 1) {
+      const xOffset = this._cellWidth + halfGap;
+      let currentX = xOffset;
+      for (let col = 1; col < this._cols; ++col) {
+        if (this._verticalGapFn(col)) {
+          this.context.moveTo(currentX, 0);
+          this.context.lineTo(currentX, this.canvas.nativeElement.height);
+        }
+        currentX += xOffset + halfGap;
+      }
+    }
+    this.context.stroke();
+  }
+
   private renderText(params: RenderTextParams) {
     this.context.textAlign = "center";
     this.context.font = params.font;
@@ -364,25 +415,25 @@ export class NgxCanvasGridComponent {
 
   private getCellTopLeft(row: number, col: number): Point2D {
     return {
-      x: col * (this._cellWidth + this._spacing),
-      y: row * (this._cellHeight + this._spacing),
+      x: col * (this._cellWidth + this._gapSize),
+      y: row * (this._cellHeight + this._gapSize),
     };
   }
 
   private getCell(x: number, y: number): number | null {
     const closestCol = Math.min(
-      Math.floor(x / (this._cellWidth + this._spacing)),
+      Math.floor(x / (this._cellWidth + this._gapSize)),
       this._cols - 1
     );
-    const closestColX = (this._cellWidth + this._spacing) * closestCol;
+    const closestColX = (this._cellWidth + this._gapSize) * closestCol;
     if (x >= closestColX + this._cellWidth) {
       return null;
     }
     const closestRow = Math.min(
-      Math.floor(y / (this._cellHeight + this._spacing)),
+      Math.floor(y / (this._cellHeight + this._gapSize)),
       this._rows - 1
     );
-    const closestRowY = (this._cellHeight + this._spacing) * closestRow;
+    const closestRowY = (this._cellHeight + this._gapSize) * closestRow;
     if (y >= closestRowY + this._cellHeight) {
       return null;
     }
@@ -410,9 +461,9 @@ export class NgxCanvasGridComponent {
     if (this.canvas) {
       this._length = this._rows * this._cols;
       this.canvas.nativeElement.width =
-        (this._cellWidth + this._spacing) * this._cols - this._spacing;
+        (this._cellWidth + this._gapSize) * this._cols - this._gapSize;
       this.canvas.nativeElement.height =
-        (this._cellHeight + this._spacing) * this._rows - this._spacing;
+        (this._cellHeight + this._gapSize) * this._rows - this._gapSize;
       this.redrawAll();
 
       this.canvasSizeChangedEvent.emit({

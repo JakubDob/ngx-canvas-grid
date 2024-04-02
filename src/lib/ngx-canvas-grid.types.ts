@@ -54,12 +54,17 @@ export type CanvasGridCellRenderFn = (
   params: CanvasGridCellRenderParams
 ) => void;
 
+export type CanvasGridGapFn = (gapNumber: number) => boolean;
+
 export type CanvasGridDefaultOptions = {
   cellWidth?: number;
   cellHeight?: number;
   rows?: number;
   cols?: number;
-  spacing?: number;
+  gapSize?: number;
+  gapColor?: string;
+  verticalGapFn?: CanvasGridGapFn;
+  horizontalGapFn?: CanvasGridGapFn;
   fpsThrottle?: number;
 };
 
