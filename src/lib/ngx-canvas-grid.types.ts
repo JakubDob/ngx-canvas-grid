@@ -1,10 +1,17 @@
-import { InjectionToken } from "@angular/core";
+import { InjectionToken, Signal } from "@angular/core";
 
-export type RenderTextParams = {
-  text: string;
-  font: string;
-  color: string;
-  cellRect: Rect;
+export type CanvasGridState = {
+  readonly gapSize: Signal<number>;
+  readonly canvasWidth: Signal<number>;
+  readonly canvasHeight: Signal<number>;
+  readonly cellWidth: Signal<number>;
+  readonly cellHeight: Signal<number>;
+  readonly rowCount: Signal<number>;
+  readonly colCount: Signal<number>;
+  readonly layerCount: Signal<number>;
+  readonly deltaTime: Signal<number>;
+  readonly elapsedTime: Signal<number>;
+  readonly draggingButtonId: Signal<number | null>;
 };
 
 export type Rect = {
@@ -24,37 +31,57 @@ export type Extent = {
   h: number;
 };
 
-export type CanvasGridCellRenderParams = {
-  context: CanvasRenderingContext2D;
-  renderTextFn: (params: RenderTextParams) => void;
-  cellIndex: number;
-  cellRect: Rect;
-  deltaTime: number;
-  elapsedTime: number;
-};
-
-export type GridDragEvent = {
+export type CanvasGridDragEvent = {
   buttonId: number;
   from: number;
   to: number;
+  x: number;
+  y: number;
 };
 
-export type GridDropEvent = {
+export type CanvasGridDropEvent = {
   buttonId: number;
   from: number;
   to: number;
+  x: number;
+  y: number;
 };
 
-export type GridClickEvent = {
+export type CanvasGridClickEvent = {
   buttonId: number;
   cellIndex: number;
+  x: number;
+  y: number;
 };
 
-export type CanvasGridCellRenderFn = (
-  params: CanvasGridCellRenderParams
+export type CanvasGridCellDrawFn = (
+  state: CanvasGridState,
+  context: CanvasRenderingContext2D,
+  cellIndex: number,
+  cellRect: Rect
 ) => void;
 
-export type CanvasGridGapFn = (gapNumber: number) => boolean;
+export type CanvasGridLayerDrawFn = (
+  state: CanvasGridState,
+  context: CanvasRenderingContext2D
+) => void;
+
+export type CanvasGridCellFn = {
+  type: "cell";
+  drawFn: CanvasGridCellDrawFn;
+};
+
+export type CanvasGridLayerFn = {
+  type: "layer";
+  drawFn: CanvasGridLayerDrawFn;
+};
+
+export type CanvasGridDrawFn = CanvasGridCellFn | CanvasGridLayerFn;
+
+export enum CanvasGridLayerDrawStrategy {
+  STATIC,
+  PER_FRAME,
+}
 
 export type CanvasGridDefaultOptions = {
   cellWidth?: number;
@@ -62,10 +89,8 @@ export type CanvasGridDefaultOptions = {
   rows?: number;
   cols?: number;
   gapSize?: number;
-  gapColor?: string;
-  verticalGapFn?: CanvasGridGapFn;
-  horizontalGapFn?: CanvasGridGapFn;
   fpsThrottle?: number;
+  layerCount?: number;
 };
 
 export const CANVAS_GRID_DEFAULT_OPTIONS =

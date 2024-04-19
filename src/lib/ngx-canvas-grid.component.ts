@@ -1,26 +1,32 @@
 import {
+  AfterViewInit,
+  ChangeDetectionStrategy,
   Component,
+  computed,
+  effect,
   ElementRef,
   EventEmitter,
   inject,
   Input,
   NgZone,
+  OnDestroy,
   Output,
+  QueryList,
   signal,
-  ViewChild,
+  ViewChildren,
 } from "@angular/core";
 import {
-  CanvasGridCellRenderFn,
   CanvasGridDefaultOptions,
+  CanvasGridDrawFn,
+  CanvasGridLayerDrawStrategy,
+  CanvasGridState,
   CANVAS_GRID_DEFAULT_OPTIONS,
   Extent,
-  CanvasGridGapFn,
-  GridClickEvent,
-  GridDragEvent,
-  GridDropEvent,
+  CanvasGridClickEvent,
+  CanvasGridDragEvent,
+  CanvasGridDropEvent,
   Point2D,
   Rect,
-  RenderTextParams,
 } from "./ngx-canvas-grid.types";
 
 const DEFAULT_CELL_WIDTH = 20;
@@ -28,102 +34,99 @@ const DEFAULT_CELL_HEIGHT = 20;
 const DEFAULT_ROWS = 9;
 const DEFAULT_COLS = 9;
 const DEFAULT_GAP_SIZE = 1;
-const DEFAULT_GAP_COLOR = "black";
-const DEFAULT_BACKGROUND = "gray";
+const DEFAULT_BACKGROUND_COLOR = "gray";
 const DEFAULT_CURSOR = "cell";
+
+type GridEventData = {
+  cellIndex: number;
+  x: number;
+  y: number;
+};
+
+type GridLayerMetadata = {
+  singleFrameCellIndices: Set<number>;
+  multiFrameCellIndices: Set<number>;
+  drawStrategy: CanvasGridLayerDrawStrategy;
+  redrawAll: boolean;
+};
 
 @Component({
   selector: "ngx-canvas-grid",
   standalone: true,
   imports: [],
-  template: `<canvas #canvas tabindex="0"></canvas>`,
-  styles: `
-    canvas {
-      display: block;
-      background: var(--canvas-background, DEFAULT_BACKGROUND);
-      cursor: var(--canvas-cursor, DEFAULT_CURSOR);
-    }
-  `,
+  templateUrl: "./ngx-canvas-grid.component.html",
+  styleUrl: "./ngx-canvas-grid.component.scss",
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class NgxCanvasGridComponent {
+export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
+  private ngZone: NgZone = inject(NgZone);
   private _defaults: CanvasGridDefaultOptions | null = inject(
     CANVAS_GRID_DEFAULT_OPTIONS,
     { optional: true }
   );
-  private _cellWidth: number = this._defaults?.cellWidth ?? DEFAULT_CELL_WIDTH;
-  private _cellHeight: number =
-    this._defaults?.cellHeight ?? DEFAULT_CELL_HEIGHT;
-  private _rows: number = this._defaults?.rows ?? DEFAULT_ROWS;
-  private _cols: number = this._defaults?.cols ?? DEFAULT_COLS;
-  private _gapSize: number = this._defaults?.gapSize ?? DEFAULT_GAP_SIZE;
-  private _gapColor: string = this._defaults?.gapColor ?? DEFAULT_GAP_COLOR;
-  private _verticalGapFn?: CanvasGridGapFn;
-  private _horizontalGapFn?: CanvasGridGapFn;
-  private _length: number = this._rows * this._cols;
-  private context!: CanvasRenderingContext2D;
-  private ngZone: NgZone = inject(NgZone);
+  private contexts: CanvasRenderingContext2D[] = [];
+  private lastCanvasLayer!: HTMLCanvasElement;
   private redrawIndices: Set<number> = new Set();
   private pressedIndex: number | null = null;
   private downButtonId: number | null = null;
   private lastRenderTime: number = 0;
-  private deltaTime: number = 0;
-  private elapsedTime: number = 0;
-  private _draggingButtonId = signal<number | null>(null);
+  private _cellWidth = signal<number>(
+    this._defaults?.cellWidth ?? DEFAULT_CELL_WIDTH
+  );
+  private _cellHeight = signal<number>(
+    this._defaults?.cellHeight ?? DEFAULT_CELL_HEIGHT
+  );
+  private readonly _rows = signal<number>(this._defaults?.rows ?? DEFAULT_ROWS);
+  private readonly _cols = signal<number>(this._defaults?.cols ?? DEFAULT_COLS);
+  private readonly _gapSize = signal<number>(
+    this._defaults?.gapSize ?? DEFAULT_GAP_SIZE
+  );
+  private readonly _length = computed(() => this._rows() * this._cols());
+  private readonly _deltaTime = signal<number>(0);
+  private readonly _elapsedTime = signal<number>(0);
+  private readonly _draggingButtonId = signal<number | null>(null);
+  private readonly _canvasWidth = computed(
+    () => (this._cellWidth() + this._gapSize()) * this._cols() - this._gapSize()
+  );
+  private readonly _canvasHeight = computed(
+    () =>
+      (this._cellHeight() + this._gapSize()) * this._rows() - this._gapSize()
+  );
+  private readonly _drawFns = signal<CanvasGridDrawFn[]>([]);
+  private readonly _layerCount = computed(() => this._drawFns().length);
 
-  public readonly draggingButtonId = this._draggingButtonId.asReadonly();
+  @ViewChildren("canvasLayer", { read: ElementRef })
+  canvasLayerElements!: QueryList<ElementRef<HTMLCanvasElement>>;
 
-  @ViewChild("canvas") private canvas!: ElementRef<HTMLCanvasElement>;
   @Input("cellWidth") set cellWidth(value: number) {
-    this._cellWidth = Math.floor(value);
-    this.recalculate();
+    this._cellWidth.set(Math.floor(value));
   }
   @Input("cellHeight") set cellHeight(value: number) {
-    this._cellHeight = Math.floor(value);
-    this.recalculate();
+    this._cellHeight.set(Math.floor(value));
   }
   @Input("rows") set rows(value: number) {
-    this._rows = value;
-    this.recalculate();
+    this._rows.set(value);
   }
   @Input("cols") set cols(value: number) {
-    this._cols = value;
-    this.recalculate();
+    this._cols.set(value);
   }
   @Input("gapSize") set gapSize(value: number) {
-    this._gapSize = value;
-    this.recalculate();
+    this._gapSize.set(value);
   }
 
-  @Input("gapColor") set gapColor(value: string) {
-    this._gapColor = value;
-    if (this.canvas) {
-      this.renderGaps();
-    }
+  @Input({ alias: "drawFns", required: true }) set drawFns(
+    value: CanvasGridDrawFn[]
+  ) {
+    this._drawFns.set(value);
+    this.initLayerMetadata();
   }
-
-  @Input("verticalGapFn") set verticalGapFn(value: CanvasGridGapFn) {
-    this._verticalGapFn = value;
-    if (this.canvas) {
-      this.renderGaps();
-    }
-  }
-
-  @Input("horizontalGapFn") set horizontalGapFn(value: CanvasGridGapFn) {
-    this._horizontalGapFn = value;
-    if (this.canvas) {
-      this.renderGaps();
-    }
-  }
-
-  @Input({ alias: "cellRenderFn", required: true })
-  cellRenderFn!: CanvasGridCellRenderFn;
   @Input("fpsThrottle") fpsThrottle?: number = this._defaults?.fpsThrottle;
 
   @Output() moveOnCellEvent = new EventEmitter<number>();
-  @Output() singleClickCellEvent = new EventEmitter<GridClickEvent>();
-  @Output() doubleClickCellEvent = new EventEmitter<GridClickEvent>();
-  @Output() dragCellEvent = new EventEmitter<GridDragEvent>();
-  @Output() dropCellEvent = new EventEmitter<GridDropEvent>();
+  @Output() singleClickCellEvent = new EventEmitter<CanvasGridClickEvent>();
+  @Output() doubleClickCellEvent = new EventEmitter<CanvasGridClickEvent>();
+  @Output() dragCellEvent = new EventEmitter<CanvasGridDragEvent>();
+  @Output() dropCellEvent = new EventEmitter<CanvasGridDropEvent>();
   @Output() keyDownEvent = new EventEmitter<string>();
   @Output() canvasSizeChangedEvent = new EventEmitter<Extent>();
 
@@ -133,42 +136,77 @@ export class NgxCanvasGridComponent {
   private boundOnDoubleClick = this.onDoubleClick.bind(this);
   private boundOnKeyDown = this.onKeyDown.bind(this);
   private boundOnContextMenu = this.onContextMenu.bind(this);
-  private singleFrameIndices: Set<number> = new Set();
-  private multiFrameIndices: Set<number> = new Set();
-  private shouldRedrawAll: boolean = false;
+  private boundOnMouseLeave = this.onMouseLeave.bind(this);
+
+  private layerMetadata: GridLayerMetadata[] = [];
+
+  readonly state: CanvasGridState;
+
+  constructor() {
+    this.state = {
+      canvasHeight: this._canvasHeight,
+      canvasWidth: this._canvasWidth,
+      cellHeight: this._cellHeight.asReadonly(),
+      cellWidth: this._cellWidth.asReadonly(),
+      colCount: this._cols.asReadonly(),
+      rowCount: this._rows.asReadonly(),
+      gapSize: this._gapSize.asReadonly(),
+      layerCount: this._layerCount,
+      deltaTime: this._deltaTime.asReadonly(),
+      elapsedTime: this._elapsedTime.asReadonly(),
+      draggingButtonId: this._draggingButtonId.asReadonly(),
+    };
+
+    effect(() => {
+      this.canvasSizeChangedEvent.emit({
+        h: this._canvasHeight(),
+        w: this._canvasWidth(),
+      });
+    });
+
+    effect(() => {
+      if (this.lastCanvasLayer) {
+        this.canvasLayerElements.forEach((canvas) => {
+          canvas.nativeElement.width = this._canvasWidth();
+          canvas.nativeElement.height = this._canvasHeight();
+        });
+
+        for (let i = 0; i < this._layerCount(); ++i) {
+          this.layerMetadata[i].redrawAll = true;
+        }
+      }
+    });
+  }
 
   ngAfterViewInit() {
-    const canvasElement = this.canvas.nativeElement;
-    const context2D = canvasElement.getContext("2d");
-    if (context2D) {
-      this.context = context2D;
-      this.recalculate();
-    }
+    this.contexts = this.canvasLayerElements
+      .map((element) => element.nativeElement.getContext("2d"))
+      .filter(
+        (element): element is NonNullable<typeof element> => element !== null
+      );
+    this.lastCanvasLayer = this.canvasLayerElements.last.nativeElement;
+
     this.ngZone.runOutsideAngular(() => {
-      this.canvas.nativeElement.addEventListener(
-        "mousemove",
-        this.boundOnMouseMove
-      );
-      this.canvas.nativeElement.addEventListener(
-        "mousedown",
-        this.boundOnMouseDown
-      );
-      this.canvas.nativeElement.addEventListener(
-        "mouseup",
-        this.boundOnMouseUp
-      );
-      this.canvas.nativeElement.addEventListener(
+      this.lastCanvasLayer.addEventListener("mousemove", this.boundOnMouseMove);
+      this.lastCanvasLayer.addEventListener("mousedown", this.boundOnMouseDown);
+      this.lastCanvasLayer.addEventListener("mouseup", this.boundOnMouseUp);
+      this.lastCanvasLayer.addEventListener(
         "dblclick",
         this.boundOnDoubleClick
       );
-      this.canvas.nativeElement.addEventListener(
+      this.lastCanvasLayer.addEventListener(
         "keydown",
         this.boundOnKeyDown,
         false
       );
-      this.canvas.nativeElement.addEventListener(
+      this.lastCanvasLayer.addEventListener(
         "contextmenu",
         this.boundOnContextMenu,
+        false
+      );
+      this.lastCanvasLayer.addEventListener(
+        "mouseleave",
+        this.boundOnMouseLeave,
         false
       );
       this.render(0);
@@ -176,56 +214,79 @@ export class NgxCanvasGridComponent {
   }
 
   ngOnDestroy(): void {
-    this.canvas.nativeElement.removeEventListener(
+    this.lastCanvasLayer.removeEventListener(
       "mousemove",
       this.boundOnMouseMove
     );
-    this.canvas.nativeElement.removeEventListener(
+    this.lastCanvasLayer.removeEventListener(
       "mousedown",
       this.boundOnMouseDown
     );
-    this.canvas.nativeElement.removeEventListener(
-      "mouseup",
-      this.boundOnMouseUp
-    );
-    this.canvas.nativeElement.removeEventListener(
+    this.lastCanvasLayer.removeEventListener("mouseup", this.boundOnMouseUp);
+    this.lastCanvasLayer.removeEventListener(
       "dblclick",
       this.boundOnDoubleClick
     );
-    this.canvas.nativeElement.removeEventListener(
-      "keydown",
-      this.boundOnKeyDown
-    );
-    this.canvas.nativeElement.removeEventListener(
+    this.lastCanvasLayer.removeEventListener("keydown", this.boundOnKeyDown);
+    this.lastCanvasLayer.removeEventListener(
       "contextmenu",
       this.boundOnContextMenu
     );
-  }
-
-  public addCellIndexToSingleFrameRedraw(index: number) {
-    this.singleFrameIndices.add(index);
-  }
-
-  public addCellIndexToMultiFrameRedraw(index: number) {
-    this.multiFrameIndices.add(index);
-  }
-
-  public deleteCellIndexFromMultiFrameRedraw(index: number) {
-    this.multiFrameIndices.delete(index);
-  }
-
-  public clearIndicesFromMultiFrameRedraw() {
-    this.multiFrameIndices.clear();
-  }
-
-  public redrawAll() {
-    this.context.clearRect(
-      0,
-      0,
-      this.canvas.nativeElement.width,
-      this.canvas.nativeElement.height
+    this.lastCanvasLayer.removeEventListener(
+      "mouseleave",
+      this.boundOnMouseLeave
     );
-    this.shouldRedrawAll = true;
+  }
+
+  private initLayerMetadata() {
+    if (this.layerMetadata.length < this._layerCount()) {
+      const diff = this._layerCount() - this.layerMetadata.length;
+      this.layerMetadata = [
+        ...this.layerMetadata,
+        ...Array.from({ length: diff }, () => ({
+          singleFrameCellIndices: new Set<number>(),
+          multiFrameCellIndices: new Set<number>(),
+          drawStrategy: CanvasGridLayerDrawStrategy.STATIC,
+          redrawAll: false,
+        })),
+      ];
+    }
+  }
+
+  public addCellIndexToSingleFrameRedraw(
+    cellIndex: number,
+    layerIndex: number = 0
+  ) {
+    this.layerMetadata[layerIndex].singleFrameCellIndices.add(cellIndex);
+  }
+
+  public addCellIndexToMultiFrameRedraw(
+    cellIndex: number,
+    layerIndex: number = 0
+  ) {
+    this.layerMetadata[layerIndex].multiFrameCellIndices.add(cellIndex);
+  }
+
+  public deleteCellIndexFromMultiFrameRedraw(
+    cellIndex: number,
+    layerIndex: number = 0
+  ) {
+    this.layerMetadata[layerIndex].multiFrameCellIndices.delete(cellIndex);
+  }
+
+  public clearIndicesFromMultiFrameRedraw(layerIndex: number = 0) {
+    this.layerMetadata[layerIndex].multiFrameCellIndices.clear();
+  }
+
+  public setLayerDrawStrategy(
+    strategy: CanvasGridLayerDrawStrategy,
+    layerIndex: number = 0
+  ) {
+    this.layerMetadata[layerIndex].drawStrategy = strategy;
+  }
+
+  public redrawLayer(layerIndex: number = 0) {
+    this.layerMetadata[layerIndex].redrawAll = true;
   }
 
   public getCellRectFromRowCol(cellRow: number, cellCol: number): Rect {
@@ -233,14 +294,14 @@ export class NgxCanvasGridComponent {
     return {
       x: cellPos.x,
       y: cellPos.y,
-      w: this._cellWidth,
-      h: this._cellHeight,
+      w: this._cellWidth(),
+      h: this._cellHeight(),
     };
   }
 
   public getCellRectFromIndex(cellIndex: number): Rect {
-    const cellRow = Math.floor(cellIndex / this._cols);
-    const cellCol = cellIndex % this._cols;
+    const cellRow = Math.floor(cellIndex / this._cols());
+    const cellCol = cellIndex % this._cols();
     return this.getCellRectFromRowCol(cellRow, cellCol);
   }
 
@@ -254,41 +315,43 @@ export class NgxCanvasGridComponent {
   }
 
   private onMouseMove(event: MouseEvent) {
-    const cellIndex = this.getCellIndexFromEvent(event);
-    if (cellIndex !== null) {
-      this.moveOnCellEvent.emit(cellIndex);
+    const data = this.getCellDataFromEvent(event);
+    this.moveOnCellEvent.emit(data.cellIndex);
 
-      if (this.pressedIndex !== null && this.downButtonId !== null) {
-        this._draggingButtonId.set(this.downButtonId);
-        this.dragCellEvent.emit({
-          buttonId: this.downButtonId,
-          from: this.pressedIndex,
-          to: cellIndex,
-        });
-      }
+    if (this.pressedIndex !== null && this.downButtonId !== null) {
+      this._draggingButtonId.set(this.downButtonId);
+      this.dragCellEvent.emit({
+        buttonId: this.downButtonId,
+        from: this.pressedIndex,
+        to: data.cellIndex,
+        x: data.x,
+        y: data.y,
+      });
     }
     event.stopPropagation();
     event.preventDefault();
   }
 
   private onMouseDown(event: MouseEvent) {
-    const cellIndex = this.getCellIndexFromEvent(event);
+    const cellIndex = this.getCellDataFromEvent(event).cellIndex;
     this.downButtonId = event.button;
     if (cellIndex !== null) {
       this.pressedIndex = cellIndex;
     }
     event.stopPropagation();
     event.preventDefault();
-    this.canvas.nativeElement.focus();
+    this.lastCanvasLayer.focus();
   }
 
   private onMouseUp(event: MouseEvent) {
-    const cellIndex = this.getCellIndexFromEvent(event);
-    if (cellIndex !== null) {
-      if (this.pressedIndex === cellIndex) {
+    const data = this.getCellDataFromEvent(event);
+    if (data.cellIndex !== null) {
+      if (this.pressedIndex === data.cellIndex) {
         this.singleClickCellEvent.emit({
-          cellIndex: cellIndex,
+          cellIndex: data.cellIndex,
           buttonId: event.button,
+          x: data.x,
+          y: data.y,
         });
       }
       if (this._draggingButtonId() === event.button) {
@@ -297,7 +360,9 @@ export class NgxCanvasGridComponent {
           this.dropCellEvent.emit({
             buttonId: event.button,
             from: this.pressedIndex,
-            to: cellIndex,
+            to: data.cellIndex,
+            x: data.x,
+            y: data.y,
           });
         }
       }
@@ -311,165 +376,107 @@ export class NgxCanvasGridComponent {
   }
 
   private onDoubleClick(event: MouseEvent) {
-    const cellIndex = this.getCellIndexFromEvent(event);
-    if (cellIndex !== null) {
+    const data = this.getCellDataFromEvent(event);
+    if (data.cellIndex !== null) {
       this.doubleClickCellEvent.emit({
         buttonId: event.button,
-        cellIndex: cellIndex,
+        cellIndex: data.cellIndex,
+        x: data.x,
+        y: data.y,
       });
     }
     event.stopPropagation();
     event.preventDefault();
-    this.canvas.nativeElement.focus();
+    this.lastCanvasLayer.focus();
+  }
+
+  private onMouseLeave(event: MouseEvent) {
+    this.boundOnMouseUp(event);
   }
 
   private render(timestamp: DOMHighResTimeStamp): void {
     const dt = timestamp - this.lastRenderTime;
     const fps = 1000 / dt;
-    this.deltaTime = dt / 1000;
-    this.elapsedTime += this.deltaTime;
+    this._deltaTime.set(dt / 1000);
+    this._elapsedTime.update((prev) => (prev += this._deltaTime()));
     if (this.fpsThrottle === undefined || fps < this.fpsThrottle) {
-      if (this.shouldRedrawAll) {
-        for (let i = 0; i < this._length; ++i) {
-          this.renderCell(i);
+      for (let i = 0; i < this._layerCount(); ++i) {
+        const md = this.layerMetadata[i];
+        const fns = this._drawFns()[i];
+        const ctx = this.contexts[i];
+        const isCellFnType = fns.type === "cell";
+        if (md.redrawAll) {
+          ctx.clearRect(0, 0, this._canvasWidth(), this._canvasHeight());
+          if (isCellFnType) {
+            for (let j = 0; j < this._length(); ++j) {
+              fns.drawFn(this.state, ctx, j, this.getCellRectFromIndex(j));
+            }
+            md.singleFrameCellIndices.clear();
+          } else {
+            fns.drawFn(this.state, ctx);
+          }
+          md.redrawAll = false;
+        } else {
+          if (isCellFnType) {
+            md.singleFrameCellIndices.forEach((index) =>
+              this.redrawIndices.add(index)
+            );
+            md.multiFrameCellIndices.forEach((index) =>
+              this.redrawIndices.add(index)
+            );
+            this.redrawIndices.forEach((index) =>
+              fns.drawFn(
+                this.state,
+                ctx,
+                index,
+                this.getCellRectFromIndex(index)
+              )
+            );
+            this.redrawIndices.clear();
+            md.singleFrameCellIndices.clear();
+          } else if (
+            md.drawStrategy === CanvasGridLayerDrawStrategy.PER_FRAME
+          ) {
+            ctx.clearRect(0, 0, this._canvasWidth(), this._canvasHeight());
+            fns.drawFn(this.state, ctx);
+          }
         }
-        this.renderGaps();
-        this.shouldRedrawAll = false;
-      } else {
-        this.singleFrameIndices.forEach((index) =>
-          this.redrawIndices.add(index)
-        );
-        this.multiFrameIndices.forEach((index) =>
-          this.redrawIndices.add(index)
-        );
-        this.redrawIndices.forEach((cellIndex) => {
-          this.renderCell(cellIndex);
-        });
       }
-      this.redrawIndices.clear();
-      this.singleFrameIndices.clear();
       this.lastRenderTime = timestamp;
     }
     requestAnimationFrame((time: DOMHighResTimeStamp) => this.render(time));
   }
 
-  private renderCell(cellIndex: number) {
-    this.cellRenderFn({
-      context: this.context,
-      renderTextFn: this.renderText,
-      cellIndex: cellIndex,
-      cellRect: this.getCellRectFromIndex(cellIndex),
-      deltaTime: this.deltaTime,
-      elapsedTime: this.elapsedTime,
-    });
-  }
-
-  private renderGaps() {
-    if (this._gapSize < 1) {
-      return;
-    }
-    this.context.strokeStyle = this._gapColor;
-    this.context.lineWidth = this._gapSize;
-    this.context.beginPath();
-    const halfGap = this._gapSize / 2;
-    if (this._horizontalGapFn && this._rows > 1) {
-      const yOffset = this._cellHeight + halfGap;
-      let currentY = yOffset;
-      for (let row = 1; row < this._rows; ++row) {
-        if (this._horizontalGapFn(row)) {
-          this.context.moveTo(0, currentY);
-          this.context.lineTo(this.canvas.nativeElement.width, currentY);
-        }
-        currentY += yOffset + halfGap;
-      }
-    }
-    if (this._verticalGapFn && this._cols > 1) {
-      const xOffset = this._cellWidth + halfGap;
-      let currentX = xOffset;
-      for (let col = 1; col < this._cols; ++col) {
-        if (this._verticalGapFn(col)) {
-          this.context.moveTo(currentX, 0);
-          this.context.lineTo(currentX, this.canvas.nativeElement.height);
-        }
-        currentX += xOffset + halfGap;
-      }
-    }
-    this.context.stroke();
-  }
-
-  private renderText(params: RenderTextParams) {
-    this.context.textAlign = "center";
-    this.context.font = params.font;
-    this.context.fillStyle = params.color;
-    const cellCenterX = params.cellRect.x + params.cellRect.w / 2;
-    const cellCenterY = params.cellRect.y + params.cellRect.h / 2;
-    const metrics = this.context.measureText(params.text);
-    const textHeight =
-      metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-    this.context.fillText(
-      params.text,
-      Math.floor(cellCenterX),
-      Math.floor(cellCenterY + textHeight / 2)
-    );
-  }
-
   private getCellTopLeft(row: number, col: number): Point2D {
     return {
-      x: col * (this._cellWidth + this._gapSize),
-      y: row * (this._cellHeight + this._gapSize),
+      x: col * (this._cellWidth() + this._gapSize()),
+      y: row * (this._cellHeight() + this._gapSize()),
     };
   }
 
-  private getCell(x: number, y: number): number | null {
+  private getCellDataFromEvent(event: MouseEvent): GridEventData {
+    const boundingRect = this.lastCanvasLayer.getBoundingClientRect();
+    const x = Math.min(
+      Math.max(event.clientX - boundingRect.x, 0),
+      boundingRect.width
+    );
+    const y = Math.min(
+      Math.max(event.clientY - boundingRect.y, 0),
+      boundingRect.height
+    );
     const closestCol = Math.min(
-      Math.floor(x / (this._cellWidth + this._gapSize)),
-      this._cols - 1
+      Math.floor(x / (this._cellWidth() + this._gapSize())),
+      this._cols() - 1
     );
-    const closestColX = (this._cellWidth + this._gapSize) * closestCol;
-    if (x >= closestColX + this._cellWidth) {
-      return null;
-    }
     const closestRow = Math.min(
-      Math.floor(y / (this._cellHeight + this._gapSize)),
-      this._rows - 1
+      Math.floor(y / (this._cellHeight() + this._gapSize())),
+      this._rows() - 1
     );
-    const closestRowY = (this._cellHeight + this._gapSize) * closestRow;
-    if (y >= closestRowY + this._cellHeight) {
-      return null;
-    }
-    return closestRow * this._cols + closestCol;
-  }
-
-  private getCellIndexFromEvent(event: MouseEvent): number | null {
-    const boundingRect = this.canvas.nativeElement.getBoundingClientRect();
-    const widthRatio =
-      this.canvas.nativeElement.width / this.canvas.nativeElement.scrollWidth;
-    const heightRatio =
-      this.canvas.nativeElement.height / this.canvas.nativeElement.scrollHeight;
-    const x = (event.clientX - boundingRect.x) * widthRatio;
-    const y = (event.clientY - boundingRect.y) * heightRatio;
-    if (
-      x <= this.canvas.nativeElement.width &&
-      y <= this.canvas.nativeElement.height
-    ) {
-      return this.getCell(x, y);
-    }
-    return null;
-  }
-
-  private recalculate() {
-    if (this.canvas) {
-      this._length = this._rows * this._cols;
-      this.canvas.nativeElement.width =
-        (this._cellWidth + this._gapSize) * this._cols - this._gapSize;
-      this.canvas.nativeElement.height =
-        (this._cellHeight + this._gapSize) * this._rows - this._gapSize;
-      this.redrawAll();
-
-      this.canvasSizeChangedEvent.emit({
-        h: this.canvas.nativeElement.height,
-        w: this.canvas.nativeElement.width,
-      });
-    }
+    const cellIndex = closestRow * this._cols() + closestCol;
+    return {
+      cellIndex: cellIndex,
+      x: x,
+      y: y,
+    };
   }
 }

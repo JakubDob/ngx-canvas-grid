@@ -1,0 +1,19 @@
+.container {
+  position: relative;
+  & > canvas {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+
+    &:first-child {
+      background: var(--canvas-background, DEFAULT_BACKGROUND);
+    }
+    &:last-child {
+      cursor: var(--canvas-cursor, DEFAULT_CURSOR);
+    }
+    &:focus {
+      outline: none;
+    }
+  }
+}
