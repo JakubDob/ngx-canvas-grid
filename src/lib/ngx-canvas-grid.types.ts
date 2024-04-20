@@ -1,17 +1,28 @@
 import { InjectionToken, Signal } from "@angular/core";
 
 export type CanvasGridState = {
-  readonly gapSize: Signal<number>;
-  readonly canvasWidth: Signal<number>;
-  readonly canvasHeight: Signal<number>;
-  readonly cellWidth: Signal<number>;
-  readonly cellHeight: Signal<number>;
-  readonly rowCount: Signal<number>;
-  readonly colCount: Signal<number>;
-  readonly layerCount: Signal<number>;
-  readonly deltaTime: Signal<number>;
-  readonly elapsedTime: Signal<number>;
-  readonly draggingButtonId: Signal<number | null>;
+  gapSize: Signal<number>;
+  canvasWidth: Signal<number>;
+  canvasHeight: Signal<number>;
+  cellWidth: Signal<number>;
+  cellHeight: Signal<number>;
+  cells: Signal<Readonly<GridCell[]>>;
+  rowCount: Signal<number>;
+  colCount: Signal<number>;
+  layerCount: Signal<number>;
+  deltaTime: Signal<number>;
+  elapsedTime: Signal<number>;
+  draggingButtonId: Signal<number | null>;
+};
+
+export type GridCell = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  row: number;
+  col: number;
+  index: number;
 };
 
 export type Rect = {
@@ -19,11 +30,6 @@ export type Rect = {
   y: number;
   w: number;
   h: number;
-};
-
-export type Point2D = {
-  x: number;
-  y: number;
 };
 
 export type Extent = {
@@ -57,8 +63,7 @@ export type CanvasGridClickEvent = {
 export type CanvasGridCellDrawFn = (
   state: CanvasGridState,
   context: CanvasRenderingContext2D,
-  cellIndex: number,
-  cellRect: Rect
+  cell: GridCell
 ) => void;
 
 export type CanvasGridLayerDrawFn = (

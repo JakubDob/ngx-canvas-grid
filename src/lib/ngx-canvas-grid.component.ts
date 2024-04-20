@@ -16,17 +16,16 @@ import {
   ViewChildren,
 } from "@angular/core";
 import {
+  CanvasGridClickEvent,
   CanvasGridDefaultOptions,
+  CanvasGridDragEvent,
   CanvasGridDrawFn,
+  CanvasGridDropEvent,
   CanvasGridLayerDrawStrategy,
   CanvasGridState,
   CANVAS_GRID_DEFAULT_OPTIONS,
   Extent,
-  CanvasGridClickEvent,
-  CanvasGridDragEvent,
-  CanvasGridDropEvent,
-  Point2D,
-  Rect,
+  GridCell,
 } from "./ngx-canvas-grid.types";
 
 const DEFAULT_CELL_WIDTH = 20;
@@ -94,6 +93,24 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   );
   private readonly _drawFns = signal<CanvasGridDrawFn[]>([]);
   private readonly _layerCount = computed(() => this._drawFns().length);
+  readonly cells = computed(() => {
+    return Array.from<undefined, Readonly<GridCell>>(
+      { length: this._length() },
+      (_, i) => {
+        const row = Math.floor(i / this._cols());
+        const col = i % this._cols();
+        return {
+          x: col * (this._cellWidth() + this._gapSize()),
+          y: row * (this._cellHeight() + this._gapSize()),
+          w: this._cellWidth(),
+          h: this._cellHeight(),
+          row: row,
+          col: col,
+          index: i,
+        };
+      }
+    );
+  });
 
   @ViewChildren("canvasLayer", { read: ElementRef })
   canvasLayerElements!: QueryList<ElementRef<HTMLCanvasElement>>;
@@ -140,7 +157,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
 
   private layerMetadata: GridLayerMetadata[] = [];
 
-  readonly state: CanvasGridState;
+  readonly state: Readonly<CanvasGridState>;
 
   constructor() {
     this.state = {
@@ -148,6 +165,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
       canvasWidth: this._canvasWidth,
       cellHeight: this._cellHeight.asReadonly(),
       cellWidth: this._cellWidth.asReadonly(),
+      cells: this.cells,
       colCount: this._cols.asReadonly(),
       rowCount: this._rows.asReadonly(),
       gapSize: this._gapSize.asReadonly(),
@@ -289,22 +307,6 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     this.layerMetadata[layerIndex].redrawAll = true;
   }
 
-  public getCellRectFromRowCol(cellRow: number, cellCol: number): Rect {
-    const cellPos = this.getCellTopLeft(cellRow, cellCol);
-    return {
-      x: cellPos.x,
-      y: cellPos.y,
-      w: this._cellWidth(),
-      h: this._cellHeight(),
-    };
-  }
-
-  public getCellRectFromIndex(cellIndex: number): Rect {
-    const cellRow = Math.floor(cellIndex / this._cols());
-    const cellCol = cellIndex % this._cols();
-    return this.getCellRectFromRowCol(cellRow, cellCol);
-  }
-
   private onKeyDown(event: KeyboardEvent) {
     this.keyDownEvent.emit(event.key);
   }
@@ -404,13 +406,14 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
         const md = this.layerMetadata[i];
         const fns = this._drawFns()[i];
         const ctx = this.contexts[i];
+        const cellsValue = this.cells();
         const isCellFnType = fns.type === "cell";
         if (md.redrawAll) {
           ctx.clearRect(0, 0, this._canvasWidth(), this._canvasHeight());
           if (isCellFnType) {
-            for (let j = 0; j < this._length(); ++j) {
-              fns.drawFn(this.state, ctx, j, this.getCellRectFromIndex(j));
-            }
+            cellsValue.forEach((cell) => {
+              fns.drawFn(this.state, ctx, cell);
+            });
             md.singleFrameCellIndices.clear();
           } else {
             fns.drawFn(this.state, ctx);
@@ -424,13 +427,10 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
             md.multiFrameCellIndices.forEach((index) =>
               this.redrawIndices.add(index)
             );
-            this.redrawIndices.forEach((index) =>
-              fns.drawFn(
-                this.state,
-                ctx,
-                index,
-                this.getCellRectFromIndex(index)
-              )
+            this.redrawIndices.forEach(
+              (index) =>
+                index < this._length() &&
+                fns.drawFn(this.state, ctx, cellsValue[index])
             );
             this.redrawIndices.clear();
             md.singleFrameCellIndices.clear();
@@ -445,13 +445,6 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
       this.lastRenderTime = timestamp;
     }
     requestAnimationFrame((time: DOMHighResTimeStamp) => this.render(time));
-  }
-
-  private getCellTopLeft(row: number, col: number): Point2D {
-    return {
-      x: col * (this._cellWidth() + this._gapSize()),
-      y: row * (this._cellHeight() + this._gapSize()),
-    };
   }
 
   private getCellDataFromEvent(event: MouseEvent): GridEventData {
