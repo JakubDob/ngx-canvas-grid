@@ -39,25 +39,19 @@ export type Extent = {
 
 export type CanvasGridDragEvent = {
   buttonId: number;
-  from: number;
-  to: number;
-  x: number;
-  y: number;
+  from: GridCell;
+  to: GridCell;
 };
 
 export type CanvasGridDropEvent = {
   buttonId: number;
-  from: number;
-  to: number;
-  x: number;
-  y: number;
+  from: GridCell;
+  to: GridCell;
 };
 
 export type CanvasGridClickEvent = {
   buttonId: number;
-  cellIndex: number;
-  x: number;
-  y: number;
+  cell: GridCell;
 };
 
 export type CanvasGridCellDrawFn = (
@@ -71,13 +65,16 @@ export type CanvasGridLayerDrawFn = (
   context: CanvasRenderingContext2D
 ) => void;
 
+export const PerCellDrawType = "per_cell";
+export const WholeCanvasDrawType = "whole_canvas";
+
 export type CanvasGridCellFn = {
-  type: "cell";
+  type: typeof PerCellDrawType;
   drawFn: CanvasGridCellDrawFn;
 };
 
 export type CanvasGridLayerFn = {
-  type: "layer";
+  type: typeof WholeCanvasDrawType;
   drawFn: CanvasGridLayerDrawFn;
 };
 
@@ -87,6 +84,14 @@ export enum CanvasGridLayerDrawStrategy {
   STATIC,
   PER_FRAME,
 }
+
+export type GridLayerState = {
+  singleFrameCellIndices: Set<number>;
+  multiFrameCellIndices: Set<number>;
+  drawStrategy: CanvasGridLayerDrawStrategy;
+  redrawAll: boolean;
+  drawFn: CanvasGridDrawFn;
+};
 
 export type CanvasGridDefaultOptions = {
   cellWidth?: number;

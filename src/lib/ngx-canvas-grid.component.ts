@@ -15,17 +15,19 @@ import {
   signal,
   ViewChildren,
 } from "@angular/core";
+import { LayerController } from "./ngx-canvas-grid-builder";
 import {
   CanvasGridClickEvent,
   CanvasGridDefaultOptions,
   CanvasGridDragEvent,
-  CanvasGridDrawFn,
   CanvasGridDropEvent,
   CanvasGridLayerDrawStrategy,
   CanvasGridState,
   CANVAS_GRID_DEFAULT_OPTIONS,
   Extent,
   GridCell,
+  GridLayerState,
+  PerCellDrawType,
 } from "./ngx-canvas-grid.types";
 
 const DEFAULT_CELL_WIDTH = 20;
@@ -40,13 +42,6 @@ type GridEventData = {
   cellIndex: number;
   x: number;
   y: number;
-};
-
-type GridLayerMetadata = {
-  singleFrameCellIndices: Set<number>;
-  multiFrameCellIndices: Set<number>;
-  drawStrategy: CanvasGridLayerDrawStrategy;
-  redrawAll: boolean;
 };
 
 @Component({
@@ -66,7 +61,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   private contexts: CanvasRenderingContext2D[] = [];
   private lastCanvasLayer!: HTMLCanvasElement;
   private redrawIndices: Set<number> = new Set();
-  private pressedIndex: number | null = null;
+  private pressedCell: GridCell | null = null;
   private downButtonId: number | null = null;
   private lastRenderTime: number = 0;
   private _cellWidth = signal<number>(
@@ -91,8 +86,8 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     () =>
       (this._cellHeight() + this._gapSize()) * this._rows() - this._gapSize()
   );
-  private readonly _drawFns = signal<CanvasGridDrawFn[]>([]);
-  private readonly _layerCount = computed(() => this._drawFns().length);
+  private readonly _layers = signal<ReadonlyArray<GridLayerState>>([]);
+  private readonly _layerCount = computed(() => this._layers().length);
   readonly cells = computed(() => {
     return Array.from<undefined, Readonly<GridCell>>(
       { length: this._length() },
@@ -130,16 +125,14 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   @Input("gapSize") set gapSize(value: number) {
     this._gapSize.set(value);
   }
-
-  @Input({ alias: "drawFns", required: true }) set drawFns(
-    value: CanvasGridDrawFn[]
+  @Input({ alias: "controller", required: true }) set controller(
+    value: LayerController
   ) {
-    this._drawFns.set(value);
-    this.initLayerMetadata();
+    this._layers.set(value.layers);
   }
   @Input("fpsThrottle") fpsThrottle?: number = this._defaults?.fpsThrottle;
 
-  @Output() moveOnCellEvent = new EventEmitter<number>();
+  @Output() moveOnCellEvent = new EventEmitter<GridCell>();
   @Output() singleClickCellEvent = new EventEmitter<CanvasGridClickEvent>();
   @Output() doubleClickCellEvent = new EventEmitter<CanvasGridClickEvent>();
   @Output() dragCellEvent = new EventEmitter<CanvasGridDragEvent>();
@@ -154,8 +147,6 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   private boundOnKeyDown = this.onKeyDown.bind(this);
   private boundOnContextMenu = this.onContextMenu.bind(this);
   private boundOnMouseLeave = this.onMouseLeave.bind(this);
-
-  private layerMetadata: GridLayerMetadata[] = [];
 
   readonly state: Readonly<CanvasGridState>;
 
@@ -190,7 +181,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
         });
 
         for (let i = 0; i < this._layerCount(); ++i) {
-          this.layerMetadata[i].redrawAll = true;
+          this._layers()[i].redrawAll = true;
         }
       }
     });
@@ -256,57 +247,6 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     );
   }
 
-  private initLayerMetadata() {
-    if (this.layerMetadata.length < this._layerCount()) {
-      const diff = this._layerCount() - this.layerMetadata.length;
-      this.layerMetadata = [
-        ...this.layerMetadata,
-        ...Array.from({ length: diff }, () => ({
-          singleFrameCellIndices: new Set<number>(),
-          multiFrameCellIndices: new Set<number>(),
-          drawStrategy: CanvasGridLayerDrawStrategy.STATIC,
-          redrawAll: false,
-        })),
-      ];
-    }
-  }
-
-  public addCellIndexToSingleFrameRedraw(
-    cellIndex: number,
-    layerIndex: number = 0
-  ) {
-    this.layerMetadata[layerIndex].singleFrameCellIndices.add(cellIndex);
-  }
-
-  public addCellIndexToMultiFrameRedraw(
-    cellIndex: number,
-    layerIndex: number = 0
-  ) {
-    this.layerMetadata[layerIndex].multiFrameCellIndices.add(cellIndex);
-  }
-
-  public deleteCellIndexFromMultiFrameRedraw(
-    cellIndex: number,
-    layerIndex: number = 0
-  ) {
-    this.layerMetadata[layerIndex].multiFrameCellIndices.delete(cellIndex);
-  }
-
-  public clearIndicesFromMultiFrameRedraw(layerIndex: number = 0) {
-    this.layerMetadata[layerIndex].multiFrameCellIndices.clear();
-  }
-
-  public setLayerDrawStrategy(
-    strategy: CanvasGridLayerDrawStrategy,
-    layerIndex: number = 0
-  ) {
-    this.layerMetadata[layerIndex].drawStrategy = strategy;
-  }
-
-  public redrawLayer(layerIndex: number = 0) {
-    this.layerMetadata[layerIndex].redrawAll = true;
-  }
-
   private onKeyDown(event: KeyboardEvent) {
     this.keyDownEvent.emit(event.key);
   }
@@ -317,17 +257,15 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   }
 
   private onMouseMove(event: MouseEvent) {
-    const data = this.getCellDataFromEvent(event);
-    this.moveOnCellEvent.emit(data.cellIndex);
+    const cell = this.getCellFromEvent(event);
+    this.moveOnCellEvent.emit(cell);
 
-    if (this.pressedIndex !== null && this.downButtonId !== null) {
+    if (this.pressedCell !== null && this.downButtonId !== null) {
       this._draggingButtonId.set(this.downButtonId);
       this.dragCellEvent.emit({
         buttonId: this.downButtonId,
-        from: this.pressedIndex,
-        to: data.cellIndex,
-        x: data.x,
-        y: data.y,
+        from: this.pressedCell,
+        to: cell,
       });
     }
     event.stopPropagation();
@@ -335,58 +273,48 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   }
 
   private onMouseDown(event: MouseEvent) {
-    const cellIndex = this.getCellDataFromEvent(event).cellIndex;
+    const cell = this.getCellFromEvent(event);
     this.downButtonId = event.button;
-    if (cellIndex !== null) {
-      this.pressedIndex = cellIndex;
-    }
+    this.pressedCell = cell;
     event.stopPropagation();
     event.preventDefault();
     this.lastCanvasLayer.focus();
   }
 
   private onMouseUp(event: MouseEvent) {
-    const data = this.getCellDataFromEvent(event);
-    if (data.cellIndex !== null) {
-      if (this.pressedIndex === data.cellIndex) {
-        this.singleClickCellEvent.emit({
-          cellIndex: data.cellIndex,
+    const cell = this.getCellFromEvent(event);
+    if (this.pressedCell?.index === cell.index) {
+      this.singleClickCellEvent.emit({
+        buttonId: event.button,
+        cell: cell,
+      });
+    }
+    if (this._draggingButtonId() === event.button) {
+      this._draggingButtonId.set(null);
+      if (this.pressedCell !== null) {
+        this.dropCellEvent.emit({
           buttonId: event.button,
-          x: data.x,
-          y: data.y,
+          from: this.pressedCell,
+          to: cell,
         });
       }
-      if (this._draggingButtonId() === event.button) {
-        this._draggingButtonId.set(null);
-        if (this.pressedIndex !== null) {
-          this.dropCellEvent.emit({
-            buttonId: event.button,
-            from: this.pressedIndex,
-            to: data.cellIndex,
-            x: data.x,
-            y: data.y,
-          });
-        }
-      }
-      if (this.downButtonId === event.button) {
-        this.downButtonId = null;
-      }
-      this.pressedIndex = null;
     }
+    if (this.downButtonId === event.button) {
+      this.downButtonId = null;
+    }
+    this.pressedCell = null;
+
     event.stopPropagation();
     event.preventDefault();
   }
 
   private onDoubleClick(event: MouseEvent) {
-    const data = this.getCellDataFromEvent(event);
-    if (data.cellIndex !== null) {
-      this.doubleClickCellEvent.emit({
-        buttonId: event.button,
-        cellIndex: data.cellIndex,
-        x: data.x,
-        y: data.y,
-      });
-    }
+    const cell = this.getCellFromEvent(event);
+
+    this.doubleClickCellEvent.emit({
+      buttonId: event.button,
+      cell: cell,
+    });
     event.stopPropagation();
     event.preventDefault();
     this.lastCanvasLayer.focus();
@@ -403,39 +331,41 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     this._elapsedTime.update((prev) => (prev += this._deltaTime()));
     if (this.fpsThrottle === undefined || fps < this.fpsThrottle) {
       for (let i = 0; i < this._layerCount(); ++i) {
-        const md = this.layerMetadata[i];
-        const fns = this._drawFns()[i];
+        const layer = this._layers()[i];
         const ctx = this.contexts[i];
-        const cellsValue = this.cells();
-        const isCellFnType = fns.type === "cell";
-        if (md.redrawAll) {
+        const cellsArray = this.cells();
+        const fns = layer.drawFn;
+        const isCellFnType = fns.type === PerCellDrawType;
+        if (layer.redrawAll) {
           ctx.clearRect(0, 0, this._canvasWidth(), this._canvasHeight());
           if (isCellFnType) {
-            cellsValue.forEach((cell) => {
+            cellsArray.forEach((cell) => {
               fns.drawFn(this.state, ctx, cell);
             });
-            md.singleFrameCellIndices.clear();
+            layer.singleFrameCellIndices.clear();
           } else {
             fns.drawFn(this.state, ctx);
           }
-          md.redrawAll = false;
+          layer.redrawAll = false;
         } else {
           if (isCellFnType) {
-            md.singleFrameCellIndices.forEach((index) =>
+            layer.singleFrameCellIndices.forEach((index) =>
               this.redrawIndices.add(index)
             );
-            md.multiFrameCellIndices.forEach((index) =>
+            layer.multiFrameCellIndices.forEach((index) =>
               this.redrawIndices.add(index)
             );
-            this.redrawIndices.forEach(
-              (index) =>
-                index < this._length() &&
-                fns.drawFn(this.state, ctx, cellsValue[index])
-            );
+            this.redrawIndices.forEach((index) => {
+              if (index < this._length()) {
+                const cell = cellsArray[index];
+                ctx.clearRect(cell.x, cell.y, cell.w, cell.h);
+                fns.drawFn(this.state, ctx, cell);
+              }
+            });
             this.redrawIndices.clear();
-            md.singleFrameCellIndices.clear();
+            layer.singleFrameCellIndices.clear();
           } else if (
-            md.drawStrategy === CanvasGridLayerDrawStrategy.PER_FRAME
+            layer.drawStrategy === CanvasGridLayerDrawStrategy.PER_FRAME
           ) {
             ctx.clearRect(0, 0, this._canvasWidth(), this._canvasHeight());
             fns.drawFn(this.state, ctx);
@@ -447,7 +377,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     requestAnimationFrame((time: DOMHighResTimeStamp) => this.render(time));
   }
 
-  private getCellDataFromEvent(event: MouseEvent): GridEventData {
+  private getCellFromEvent(event: MouseEvent): GridCell {
     const boundingRect = this.lastCanvasLayer.getBoundingClientRect();
     const x = Math.min(
       Math.max(event.clientX - boundingRect.x, 0),
@@ -466,10 +396,6 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
       this._rows() - 1
     );
     const cellIndex = closestRow * this._cols() + closestCol;
-    return {
-      cellIndex: cellIndex,
-      x: x,
-      y: y,
-    };
+    return this.cells()[cellIndex];
   }
 }
