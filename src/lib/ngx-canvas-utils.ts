@@ -1,11 +1,11 @@
-import { CanvasGridState, Rect } from "./ngx-canvas-grid.types";
+import { CanvasGridState, PixelRect } from "./ngx-canvas-grid.types";
 
 export function drawText(
   context: CanvasRenderingContext2D,
   text: string,
   font: string,
   fillStyle: string,
-  rect: Rect
+  rect: PixelRect
 ) {
   context.textAlign = "center";
   context.font = font;
@@ -22,41 +22,54 @@ export function drawText(
   );
 }
 
-export function drawGridLines(
+export type StrokeStyleFn = (rowOrColIndex: number) => string | null;
+
+export function drawRowLines(
   state: CanvasGridState,
   context: CanvasRenderingContext2D,
-  strokeStyle: string,
-  rowOffset: number = 3,
-  colOffset: number = 3
+  styleFn: StrokeStyleFn
 ) {
-  if (state.gapSize() < 1) {
-    return;
-  }
-  context.strokeStyle = strokeStyle;
-  context.lineWidth = state.gapSize();
-  context.beginPath();
-  const halfGap = state.gapSize() / 2;
-  if (state.rowCount() > 1) {
-    const yOffset = state.cellHeight() + halfGap;
-    let currentY = yOffset;
-    for (let row = 1; row < state.rowCount(); ++row) {
-      if (row % rowOffset === 0) {
-        context.moveTo(0, currentY);
-        context.lineTo(state.canvasWidth(), currentY);
+  if (state.rowCount() > 0) {
+    const rowGaps = state.rowGaps();
+    for (let i = 0; i < state.rowCount() + 1; ++i) {
+      const strokeStyle = styleFn(i);
+      if (rowGaps[i].value === 0 || !strokeStyle) {
+        continue;
       }
-      currentY += yOffset + halfGap;
+      context.strokeStyle = strokeStyle;
+      context.lineWidth = rowGaps[i].value;
+      context.beginPath();
+      const currentY =
+        rowGaps[i].prefixSum - rowGaps[i].value / 2 + state.cellHeight() * i;
+
+      context.moveTo(0, currentY);
+      context.lineTo(state.canvasWidth(), currentY);
+      context.stroke();
     }
   }
-  if (state.colCount() > 1) {
-    const xOffset = state.cellWidth() + halfGap;
-    let currentX = xOffset;
-    for (let col = 1; col < state.colCount(); ++col) {
-      if (col % colOffset === 0) {
-        context.moveTo(currentX, 0);
-        context.lineTo(currentX, state.canvasHeight());
+}
+
+export function drawColLines(
+  state: CanvasGridState,
+  context: CanvasRenderingContext2D,
+  styleFn: StrokeStyleFn
+) {
+  if (state.colCount() > 0) {
+    const colGaps = state.colGaps();
+    for (let i = 0; i < state.colCount() + 1; ++i) {
+      const strokeStyle = styleFn(i);
+      if (colGaps[i].value === 0 || !strokeStyle) {
+        continue;
       }
-      currentX += xOffset + halfGap;
+      context.strokeStyle = strokeStyle;
+      context.lineWidth = colGaps[i].value;
+      context.beginPath();
+      const currentX =
+        colGaps[i].prefixSum - colGaps[i].value / 2 + state.cellWidth() * i;
+
+      context.moveTo(currentX, 0);
+      context.lineTo(currentX, state.canvasHeight());
+      context.stroke();
     }
   }
-  context.stroke();
 }

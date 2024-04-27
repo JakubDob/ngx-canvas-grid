@@ -12,6 +12,7 @@ import {
   OnDestroy,
   Output,
   QueryList,
+  Signal,
   signal,
   ViewChildren,
 } from "@angular/core";
@@ -21,13 +22,20 @@ import {
   CanvasGridDefaultOptions,
   CanvasGridDragEvent,
   CanvasGridDropEvent,
+  CanvasGridElement,
+  CanvasGridGapSizeType,
   CanvasGridLayerDrawStrategy,
+  CanvasGridMoveEvent,
   CanvasGridState,
   CANVAS_GRID_DEFAULT_OPTIONS,
-  Extent,
+  CellType,
+  PixelExtent,
+  GapType,
   GridCell,
+  GridGap,
   GridLayerState,
   PerCellDrawType,
+  MousePixelPos,
 } from "./ngx-canvas-grid.types";
 
 const DEFAULT_CELL_WIDTH = 20;
@@ -37,12 +45,6 @@ const DEFAULT_COLS = 9;
 const DEFAULT_GAP_SIZE = 1;
 const DEFAULT_BACKGROUND_COLOR = "gray";
 const DEFAULT_CURSOR = "cell";
-
-type GridEventData = {
-  cellIndex: number;
-  x: number;
-  y: number;
-};
 
 @Component({
   selector: "ngx-canvas-grid",
@@ -61,7 +63,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   private contexts: CanvasRenderingContext2D[] = [];
   private lastCanvasLayer!: HTMLCanvasElement;
   private redrawIndices: Set<number> = new Set();
-  private pressedCell: GridCell | null = null;
+  private pressedTarget: CanvasGridElement | null = null;
   private downButtonId: number | null = null;
   private lastRenderTime: number = 0;
   private _cellWidth = signal<number>(
@@ -72,20 +74,64 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   );
   private readonly _rows = signal<number>(this._defaults?.rows ?? DEFAULT_ROWS);
   private readonly _cols = signal<number>(this._defaults?.cols ?? DEFAULT_COLS);
-  private readonly _gapSize = signal<number>(
+  private readonly _gapSizeGen = signal<CanvasGridGapSizeType>(
     this._defaults?.gapSize ?? DEFAULT_GAP_SIZE
   );
+  private readonly _rowGaps: Signal<GridGap[]> = computed(() => {
+    const fn = this._gapSizeGen();
+    const gaps: GridGap[] = [];
+    let sum = 0;
+    let yOffset = 0;
+    for (let i = 0; i < this._rows() + 1; ++i) {
+      const value = typeof fn === "number" ? fn : fn.rowFn(i);
+      yOffset += this._cellHeight() * i + sum;
+      sum += value;
+      gaps.push({
+        type: "gap",
+        col: 0,
+        prefixSum: sum,
+        row: i,
+        value: value,
+        x: 0,
+        y: yOffset,
+      });
+    }
+    return gaps;
+  });
+  private readonly _colGaps = computed(() => {
+    const fn = this._gapSizeGen();
+    const gaps: GridGap[] = [];
+    let sum = 0;
+    let xOffset = 0;
+    for (let i = 0; i < this._cols() + 1; ++i) {
+      const value = typeof fn === "number" ? fn : fn.colFn(i);
+      xOffset += this._cellWidth() * i + sum;
+      sum += value;
+      gaps.push({
+        type: "gap",
+        col: i,
+        prefixSum: sum,
+        row: 0,
+        value: value,
+        x: xOffset,
+        y: 0,
+      });
+    }
+    return gaps;
+  });
   private readonly _length = computed(() => this._rows() * this._cols());
   private readonly _deltaTime = signal<number>(0);
   private readonly _elapsedTime = signal<number>(0);
   private readonly _draggingButtonId = signal<number | null>(null);
-  private readonly _canvasWidth = computed(
-    () => (this._cellWidth() + this._gapSize()) * this._cols() - this._gapSize()
-  );
-  private readonly _canvasHeight = computed(
-    () =>
-      (this._cellHeight() + this._gapSize()) * this._rows() - this._gapSize()
-  );
+  private readonly _canvasWidth = computed(() => {
+    const totalGapWidth = this._colGaps()[this._colGaps().length - 1].prefixSum;
+    return this._cellWidth() * this._cols() + totalGapWidth;
+  });
+  private readonly _canvasHeight = computed(() => {
+    const totalGapHeight =
+      this._rowGaps()[this._rowGaps().length - 1].prefixSum;
+    return this._cellHeight() * this._rows() + totalGapHeight;
+  });
   private readonly _layers = signal<ReadonlyArray<GridLayerState>>([]);
   private readonly _layerCount = computed(() => this._layers().length);
   readonly cells = computed(() => {
@@ -95,8 +141,9 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
         const row = Math.floor(i / this._cols());
         const col = i % this._cols();
         return {
-          x: col * (this._cellWidth() + this._gapSize()),
-          y: row * (this._cellHeight() + this._gapSize()),
+          type: "cell",
+          x: col * this._cellWidth() + this._colGaps()[col].prefixSum,
+          y: row * this._cellHeight() + this._rowGaps()[row].prefixSum,
           w: this._cellWidth(),
           h: this._cellHeight(),
           row: row,
@@ -122,8 +169,8 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   @Input("cols") set cols(value: number) {
     this._cols.set(value);
   }
-  @Input("gapSize") set gapSize(value: number) {
-    this._gapSize.set(value);
+  @Input("gapSize") set gapSize(value: CanvasGridGapSizeType) {
+    this._gapSizeGen.set(value);
   }
   @Input({ alias: "controller", required: true }) set controller(
     value: LayerController
@@ -132,13 +179,13 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   }
   @Input("fpsThrottle") fpsThrottle?: number = this._defaults?.fpsThrottle;
 
-  @Output() moveOnCellEvent = new EventEmitter<GridCell>();
-  @Output() singleClickCellEvent = new EventEmitter<CanvasGridClickEvent>();
-  @Output() doubleClickCellEvent = new EventEmitter<CanvasGridClickEvent>();
-  @Output() dragCellEvent = new EventEmitter<CanvasGridDragEvent>();
-  @Output() dropCellEvent = new EventEmitter<CanvasGridDropEvent>();
+  @Output() moveEvent = new EventEmitter<CanvasGridMoveEvent>();
+  @Output() singleClickEvent = new EventEmitter<CanvasGridClickEvent>();
+  @Output() doubleClickEvent = new EventEmitter<CanvasGridClickEvent>();
+  @Output() dragEvent = new EventEmitter<CanvasGridDragEvent>();
+  @Output() dropEvent = new EventEmitter<CanvasGridDropEvent>();
   @Output() keyDownEvent = new EventEmitter<string>();
-  @Output() canvasSizeChangedEvent = new EventEmitter<Extent>();
+  @Output() canvasSizeChangedEvent = new EventEmitter<PixelExtent>();
 
   private boundOnMouseMove = this.onMouseMove.bind(this);
   private boundOnMouseDown = this.onMouseDown.bind(this);
@@ -159,7 +206,8 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
       cells: this.cells,
       colCount: this._cols.asReadonly(),
       rowCount: this._rows.asReadonly(),
-      gapSize: this._gapSize.asReadonly(),
+      rowGaps: this._rowGaps,
+      colGaps: this._colGaps,
       layerCount: this._layerCount,
       deltaTime: this._deltaTime.asReadonly(),
       elapsedTime: this._elapsedTime.asReadonly(),
@@ -257,15 +305,20 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   }
 
   private onMouseMove(event: MouseEvent) {
-    const cell = this.getCellFromEvent(event);
-    this.moveOnCellEvent.emit(cell);
-
-    if (this.pressedCell !== null && this.downButtonId !== null) {
+    const target = this.getTargetFromEvent(event);
+    this.moveEvent.emit({
+      target: target.element,
+      mouseX: target.mouseX,
+      mouseY: target.mouseY,
+    });
+    if (this.pressedTarget !== null && this.downButtonId !== null) {
       this._draggingButtonId.set(this.downButtonId);
-      this.dragCellEvent.emit({
+      this.dragEvent.emit({
         buttonId: this.downButtonId,
-        from: this.pressedCell,
-        to: cell,
+        from: this.pressedTarget,
+        to: target.element,
+        mouseX: target.mouseX,
+        mouseY: target.mouseY,
       });
     }
     event.stopPropagation();
@@ -273,47 +326,80 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   }
 
   private onMouseDown(event: MouseEvent) {
-    const cell = this.getCellFromEvent(event);
+    const target = this.getTargetFromEvent(event);
     this.downButtonId = event.button;
-    this.pressedCell = cell;
+    this.pressedTarget = target.element;
     event.stopPropagation();
     event.preventDefault();
     this.lastCanvasLayer.focus();
   }
 
+  private equalElements(a: CanvasGridElement, b: CanvasGridElement) {
+    if (a.type !== b.type) {
+      return false;
+    }
+    if (
+      ((a.type === "cell" && b.type === "cell") ||
+        (a.type === "gap" && b.type === "gap")) &&
+      a.row === b.row &&
+      a.col === b.col
+    ) {
+      return true;
+    }
+    if (
+      a.type === "gap_pair" &&
+      b.type === "gap_pair" &&
+      a.rowGap.row === b.rowGap.row &&
+      a.rowGap.col === b.rowGap.col &&
+      a.colGap.row === b.colGap.row &&
+      a.colGap.col === b.colGap.col
+    ) {
+      return true;
+    }
+    return false;
+  }
+
   private onMouseUp(event: MouseEvent) {
-    const cell = this.getCellFromEvent(event);
-    if (this.pressedCell?.index === cell.index) {
-      this.singleClickCellEvent.emit({
+    const target = this.getTargetFromEvent(event);
+    if (
+      this.pressedTarget &&
+      this.equalElements(this.pressedTarget, target.element)
+    ) {
+      this.singleClickEvent.emit({
         buttonId: event.button,
-        cell: cell,
+        target: target.element,
+        mouseX: target.mouseX,
+        mouseY: target.mouseY,
       });
     }
     if (this._draggingButtonId() === event.button) {
       this._draggingButtonId.set(null);
-      if (this.pressedCell !== null) {
-        this.dropCellEvent.emit({
+      if (this.pressedTarget !== null) {
+        this.dropEvent.emit({
           buttonId: event.button,
-          from: this.pressedCell,
-          to: cell,
+          from: this.pressedTarget,
+          to: target.element,
+          mouseX: target.mouseX,
+          mouseY: target.mouseY,
         });
       }
     }
     if (this.downButtonId === event.button) {
       this.downButtonId = null;
     }
-    this.pressedCell = null;
+    this.pressedTarget = null;
 
     event.stopPropagation();
     event.preventDefault();
   }
 
   private onDoubleClick(event: MouseEvent) {
-    const cell = this.getCellFromEvent(event);
-
-    this.doubleClickCellEvent.emit({
+    const target = this.getTargetFromEvent(event);
+    this.doubleClickEvent.emit({
       buttonId: event.button,
-      cell: cell,
+      target: target.element,
+      mouseX: target.mouseX,
+      mouseY: target.mouseY,
     });
     event.stopPropagation();
     event.preventDefault();
@@ -377,7 +463,9 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     requestAnimationFrame((time: DOMHighResTimeStamp) => this.render(time));
   }
 
-  private getCellFromEvent(event: MouseEvent): GridCell {
+  private getTargetFromEvent(
+    event: MouseEvent
+  ): { element: CanvasGridElement } & MousePixelPos {
     const boundingRect = this.lastCanvasLayer.getBoundingClientRect();
     const x = Math.min(
       Math.max(event.clientX - boundingRect.x, 0),
@@ -387,15 +475,69 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
       Math.max(event.clientY - boundingRect.y, 0),
       boundingRect.height
     );
-    const closestCol = Math.min(
-      Math.floor(x / (this._cellWidth() + this._gapSize())),
-      this._cols() - 1
+    const colI = this.findTargetCoordinate(
+      this._colGaps(),
+      this._cellWidth(),
+      this._cols(),
+      x
     );
-    const closestRow = Math.min(
-      Math.floor(y / (this._cellHeight() + this._gapSize())),
-      this._rows() - 1
+    const rowI = this.findTargetCoordinate(
+      this._rowGaps(),
+      this._cellHeight(),
+      this._rows(),
+      y
     );
-    const cellIndex = closestRow * this._cols() + closestCol;
-    return this.cells()[cellIndex];
+    if (colI.type === "cell" && rowI.type === "cell") {
+      const index = rowI.value * this._cols() + colI.value;
+      return {
+        element: this.cells()[index],
+        mouseX: x,
+        mouseY: y,
+      };
+    }
+    if (colI.type === "gap" && rowI.type === "gap") {
+      return {
+        element: {
+          type: "gap_pair",
+          colGap: this._colGaps()[colI.value],
+          rowGap: this._rowGaps()[rowI.value],
+        },
+        mouseX: x,
+        mouseY: y,
+      };
+    }
+    if (colI.type === "gap") {
+      return { element: this._colGaps()[colI.value], mouseX: x, mouseY: y };
+    }
+    return { element: this._rowGaps()[rowI.value], mouseX: x, mouseY: y };
+  }
+
+  private findTargetCoordinate(
+    gaps: GridGap[],
+    cellExtent: number,
+    dimCellCount: number,
+    eventCoord: number
+  ): { type: typeof CellType | typeof GapType; value: number } {
+    let leftI = 0;
+    let rightI = dimCellCount - 1;
+    let midI = 0;
+    while (leftI <= rightI) {
+      midI = Math.floor((rightI + leftI) / 2);
+      const closestCell = midI * cellExtent + gaps[midI].prefixSum;
+      if (eventCoord < closestCell) {
+        rightI = midI - 1;
+      } else if (eventCoord > closestCell + cellExtent) {
+        leftI = midI + 1;
+      } else {
+        return {
+          type: "cell",
+          value: midI,
+        };
+      }
+    }
+    return {
+      type: "gap",
+      value: leftI,
+    };
   }
 }

@@ -1,7 +1,12 @@
 import { InjectionToken, Signal } from "@angular/core";
 
+export const CellType = "cell";
+export const GapType = "gap";
+export const GapPairType = "gap_pair";
+
 export type CanvasGridState = {
-  gapSize: Signal<number>;
+  rowGaps: Signal<GridGap[]>;
+  colGaps: Signal<GridGap[]>;
   canvasWidth: Signal<number>;
   canvasHeight: Signal<number>;
   cellWidth: Signal<number>;
@@ -15,44 +20,69 @@ export type CanvasGridState = {
   draggingButtonId: Signal<number | null>;
 };
 
-export type GridCell = {
+export type PixelPos = {
   x: number;
   y: number;
-  w: number;
-  h: number;
+};
+
+export type MousePixelPos = {
+  mouseX: number;
+  mouseY: number;
+};
+
+export type GridPos = {
   row: number;
   col: number;
+};
+
+export type PixelExtent = {
+  w: number;
+  h: number;
+};
+
+export type PixelRect = PixelPos & PixelExtent;
+
+export type GridCell = {
+  type: typeof CellType;
   index: number;
+} & PixelRect &
+  GridPos;
+
+export type GridGap = {
+  type: typeof GapType;
+  value: number;
+  prefixSum: number;
+} & PixelPos &
+  GridPos;
+
+export type GridGapPair = {
+  type: typeof GapPairType;
+  rowGap: GridGap;
+  colGap: GridGap;
 };
 
-export type Rect = {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-};
+export type CanvasGridElement = GridCell | GridGap | GridGapPair;
 
-export type Extent = {
-  w: number;
-  h: number;
-};
+export type CanvasGridMoveEvent = {
+  target: CanvasGridElement;
+} & MousePixelPos;
 
 export type CanvasGridDragEvent = {
   buttonId: number;
-  from: GridCell;
-  to: GridCell;
-};
+  from: CanvasGridElement;
+  to: CanvasGridElement;
+} & MousePixelPos;
 
 export type CanvasGridDropEvent = {
   buttonId: number;
-  from: GridCell;
-  to: GridCell;
-};
+  from: CanvasGridElement;
+  to: CanvasGridElement;
+} & MousePixelPos;
 
 export type CanvasGridClickEvent = {
   buttonId: number;
-  cell: GridCell;
-};
+  target: CanvasGridElement;
+} & MousePixelPos;
 
 export type CanvasGridCellDrawFn = (
   state: CanvasGridState,
@@ -93,6 +123,15 @@ export type GridLayerState = {
   drawFn: CanvasGridDrawFn;
 };
 
+export type CanvasGridGapSizeFn = (rowOrColGapIndex: number) => number;
+
+export type CanvasGridGapSizeFns = {
+  rowFn: CanvasGridGapSizeFn;
+  colFn: CanvasGridGapSizeFn;
+};
+
+export type CanvasGridGapSizeType = number | CanvasGridGapSizeFns;
+
 export type CanvasGridDefaultOptions = {
   cellWidth?: number;
   cellHeight?: number;
@@ -100,7 +139,6 @@ export type CanvasGridDefaultOptions = {
   cols?: number;
   gapSize?: number;
   fpsThrottle?: number;
-  layerCount?: number;
 };
 
 export const CANVAS_GRID_DEFAULT_OPTIONS =
