@@ -417,44 +417,54 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     this._elapsedTime.update((prev) => (prev += this._deltaTime()));
     if (this.fpsThrottle === undefined || fps < this.fpsThrottle) {
       for (let i = 0; i < this._layerCount(); ++i) {
-        const layer = this._layers()[i];
-        const ctx = this.contexts[i];
-        const cellsArray = this.cells();
-        const fns = layer.drawFn;
-        const isCellFnType = fns.type === PerCellDrawType;
-        if (layer.redrawAll) {
-          ctx.clearRect(0, 0, this._canvasWidth(), this._canvasHeight());
+        if (this._layers()[i].redrawAll) {
+          const fns = this._layers()[i].drawFn;
+          const isCellFnType = fns.type === PerCellDrawType;
+          this.contexts[i].clearRect(
+            0,
+            0,
+            this._canvasWidth(),
+            this._canvasHeight()
+          );
           if (isCellFnType) {
-            cellsArray.forEach((cell) => {
-              fns.drawFn(this.state, ctx, cell);
+            this.cells().forEach((cell) => {
+              fns.drawFn(this.state, this.contexts[i], cell);
             });
-            layer.singleFrameCellIndices.clear();
+            this._layers()[i].singleFrameCellIndices.clear();
           } else {
-            fns.drawFn(this.state, ctx);
+            fns.drawFn(this.state, this.contexts[i]);
           }
-          layer.redrawAll = false;
+          this._layers()[i].redrawAll = false;
         } else {
+          const fns = this._layers()[i].drawFn;
+          const isCellFnType = fns.type === PerCellDrawType;
           if (isCellFnType) {
-            layer.singleFrameCellIndices.forEach((index) =>
+            this._layers()[i].singleFrameCellIndices.forEach((index) =>
               this.redrawIndices.add(index)
             );
-            layer.multiFrameCellIndices.forEach((index) =>
+            this._layers()[i].multiFrameCellIndices.forEach((index) =>
               this.redrawIndices.add(index)
             );
             this.redrawIndices.forEach((index) => {
               if (index < this._length()) {
-                const cell = cellsArray[index];
-                ctx.clearRect(cell.x, cell.y, cell.w, cell.h);
-                fns.drawFn(this.state, ctx, cell);
+                const cell = this.cells()[index];
+                this.contexts[i].clearRect(cell.x, cell.y, cell.w, cell.h);
+                fns.drawFn(this.state, this.contexts[i], cell);
               }
             });
             this.redrawIndices.clear();
-            layer.singleFrameCellIndices.clear();
+            this._layers()[i].singleFrameCellIndices.clear();
           } else if (
-            layer.drawStrategy === CanvasGridLayerDrawStrategy.PER_FRAME
+            this._layers()[i].drawStrategy ===
+            CanvasGridLayerDrawStrategy.PER_FRAME
           ) {
-            ctx.clearRect(0, 0, this._canvasWidth(), this._canvasHeight());
-            fns.drawFn(this.state, ctx);
+            this.contexts[i].clearRect(
+              0,
+              0,
+              this._canvasWidth(),
+              this._canvasHeight()
+            );
+            fns.drawFn(this.state, this.contexts[i]);
           }
         }
       }
