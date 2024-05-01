@@ -1,7 +1,6 @@
 import {
   CanvasGridCellDrawFn,
   CanvasGridLayerDrawFn,
-  CanvasGridLayerDrawStrategy,
   GridLayerState,
   PerCellDrawType,
   WholeCanvasDrawType,
@@ -22,40 +21,88 @@ export class LayerController {
     return this._layers;
   }
 
-  redrawLayer(layerIndex: number = 0): void {
-    this._layers[layerIndex].redrawAll = true;
-  }
-
-  addCellIndexToSingleFrameRedraw(
-    cellIndex: number,
-    layerIndex: number = 0
+  drawOnce(row: number, col: number, layerIndex: number): void;
+  drawOnce(cellIndex: number, layerIndex: number): void;
+  drawOnce(layerIndex: number): void;
+  drawOnce(
+    rowOrIndexOrLayer: number,
+    colOrLayer?: number,
+    layer?: number
   ): void {
-    this._layers[layerIndex].singleFrameCellIndices.add(cellIndex);
+    if (colOrLayer === undefined) {
+      this._layers[rowOrIndexOrLayer].redrawPerFrame = false;
+      this._layers[rowOrIndexOrLayer].redrawAll = true;
+    } else {
+      if (layer === undefined) {
+        if (this._layers[colOrLayer].drawFn.type === "whole_canvas") {
+          return;
+        }
+        this._layers[colOrLayer].singleFrameCellIndices.add(rowOrIndexOrLayer);
+      } else {
+        if (this._layers[layer].drawFn.type === "whole_canvas") {
+          return;
+        }
+        this._layers[layer].singleFrameCellGridPos.push({
+          row: rowOrIndexOrLayer,
+          col: colOrLayer,
+        });
+      }
+    }
   }
 
-  addCellIndexToMultiFrameRedraw(
-    cellIndex: number,
-    layerIndex: number = 0
+  drawPerFrame(row: number, col: number, layerIndex: number): void;
+  drawPerFrame(cellIndex: number, layerIndex: number): void;
+  drawPerFrame(layerIndex: number): void;
+  drawPerFrame(
+    rowOrIndexOrLayer: number,
+    colOrLayer?: number,
+    layer?: number
   ): void {
-    this._layers[layerIndex].multiFrameCellIndices.add(cellIndex);
+    if (colOrLayer === undefined) {
+      this._layers[rowOrIndexOrLayer].redrawPerFrame = true;
+    } else {
+      if (layer === undefined) {
+        if (this._layers[colOrLayer].drawFn.type === "whole_canvas") {
+          return;
+        }
+        this._layers[colOrLayer].multiFrameCellIndices.add(rowOrIndexOrLayer);
+      } else {
+        if (this._layers[layer].drawFn.type === "whole_canvas") {
+          return;
+        }
+        this._layers[layer].multiFrameCellGridPos.push({
+          row: rowOrIndexOrLayer,
+          col: colOrLayer,
+        });
+      }
+    }
   }
 
-  deleteCellIndexFromMultiFrameRedraw(
-    cellIndex: number,
-    layerIndex: number = 0
+  deleteCellDrawnPerFrame(row: number, col: number, layerIndex: number): void;
+  deleteCellDrawnPerFrame(cellIndex: number, layerIndex: number): void;
+  deleteCellDrawnPerFrame(layerIndex: number): void;
+  deleteCellDrawnPerFrame(
+    rowOrIndexOrLayer: number,
+    colOrLayer?: number,
+    layer?: number
   ): void {
-    this._layers[layerIndex].multiFrameCellIndices.delete(cellIndex);
-  }
-
-  clearIndicesFromMultiFrameRedraw(layerIndex: number = 0): void {
-    this._layers[layerIndex].multiFrameCellIndices.clear();
-  }
-
-  setLayerDrawStrategy(
-    strategy: CanvasGridLayerDrawStrategy,
-    layerIndex: number = 0
-  ): void {
-    this._layers[layerIndex].drawStrategy = strategy;
+    if (colOrLayer === undefined) {
+      this._layers[rowOrIndexOrLayer].multiFrameCellIndices.clear();
+    } else {
+      if (layer === undefined) {
+        this._layers[colOrLayer].multiFrameCellIndices.delete(
+          rowOrIndexOrLayer
+        );
+      } else {
+        if (this._layers[layer].drawFn.type === "whole_canvas") {
+          return;
+        }
+        this._layers[layer].delMultiFrameCellGridPos.push({
+          row: rowOrIndexOrLayer,
+          col: colOrLayer,
+        });
+      }
+    }
   }
 
   public static Builder = class implements LayerBuilder {
@@ -68,10 +115,13 @@ export class LayerController {
     public addLayerDrawnPerCell(drawFn: CanvasGridCellDrawFn): LayerBuilder {
       this.#controller._layers.push({
         drawFn: { drawFn: drawFn, type: PerCellDrawType },
-        drawStrategy: CanvasGridLayerDrawStrategy.STATIC,
-        multiFrameCellIndices: new Set(),
         redrawAll: false,
+        redrawPerFrame: false,
+        multiFrameCellIndices: new Set(),
         singleFrameCellIndices: new Set(),
+        multiFrameCellGridPos: [],
+        singleFrameCellGridPos: [],
+        delMultiFrameCellGridPos: [],
       });
       return this;
     }
@@ -79,10 +129,13 @@ export class LayerController {
     public addLayerDrawnAsWhole(drawFn: CanvasGridLayerDrawFn): LayerBuilder {
       this.#controller._layers.push({
         drawFn: { drawFn: drawFn, type: WholeCanvasDrawType },
-        drawStrategy: CanvasGridLayerDrawStrategy.STATIC,
-        multiFrameCellIndices: new Set(),
         redrawAll: false,
+        redrawPerFrame: false,
+        multiFrameCellIndices: new Set(),
         singleFrameCellIndices: new Set(),
+        multiFrameCellGridPos: [],
+        singleFrameCellGridPos: [],
+        delMultiFrameCellGridPos: [],
       });
       return this;
     }

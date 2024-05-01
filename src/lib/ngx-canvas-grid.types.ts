@@ -17,7 +17,6 @@ export type CanvasGridState = {
   layerCount: Signal<number>;
   deltaTime: Signal<number>;
   elapsedTime: Signal<number>;
-  draggingButtonId: Signal<number | null>;
 };
 
 export type PixelPos = {
@@ -25,9 +24,9 @@ export type PixelPos = {
   y: number;
 };
 
-export type MousePixelPos = {
-  mouseX: number;
-  mouseY: number;
+export type PointerPixelPos = {
+  pointerX: number;
+  pointerY: number;
 };
 
 export type GridPos = {
@@ -64,25 +63,31 @@ export type GridGapPair = {
 export type CanvasGridElement = GridCell | GridGap | GridGapPair;
 
 export type CanvasGridMoveEvent = {
+  browserEvent: PointerEvent;
   target: CanvasGridElement;
-} & MousePixelPos;
+} & PointerPixelPos;
 
 export type CanvasGridDragEvent = {
-  buttonId: number;
+  browserEvent: PointerEvent;
   from: CanvasGridElement;
   to: CanvasGridElement;
-} & MousePixelPos;
+} & PointerPixelPos;
 
 export type CanvasGridDropEvent = {
-  buttonId: number;
+  browserEvent: PointerEvent;
   from: CanvasGridElement;
   to: CanvasGridElement;
-} & MousePixelPos;
+} & PointerPixelPos;
+
+export type CanvasGridDoubleClickEvent = {
+  browserEvent: MouseEvent;
+  target: CanvasGridElement;
+} & PointerPixelPos;
 
 export type CanvasGridClickEvent = {
-  buttonId: number;
+  browserEvent: PointerEvent;
   target: CanvasGridElement;
-} & MousePixelPos;
+} & PointerPixelPos;
 
 export type CanvasGridCellDrawFn = (
   state: CanvasGridState,
@@ -110,16 +115,14 @@ export type CanvasGridLayerFn = {
 
 export type CanvasGridDrawFn = CanvasGridCellFn | CanvasGridLayerFn;
 
-export enum CanvasGridLayerDrawStrategy {
-  STATIC,
-  PER_FRAME,
-}
-
 export type GridLayerState = {
   singleFrameCellIndices: Set<number>;
   multiFrameCellIndices: Set<number>;
-  drawStrategy: CanvasGridLayerDrawStrategy;
+  singleFrameCellGridPos: GridPos[];
+  multiFrameCellGridPos: GridPos[];
+  delMultiFrameCellGridPos: GridPos[];
   redrawAll: boolean;
+  redrawPerFrame: boolean;
   drawFn: CanvasGridDrawFn;
 };
 

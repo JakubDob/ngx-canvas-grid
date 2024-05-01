@@ -24,7 +24,6 @@ import {
   CanvasGridDropEvent,
   CanvasGridElement,
   CanvasGridGapSizeType,
-  CanvasGridLayerDrawStrategy,
   CanvasGridMoveEvent,
   CanvasGridState,
   CANVAS_GRID_DEFAULT_OPTIONS,
@@ -35,7 +34,8 @@ import {
   GridGap,
   GridLayerState,
   PerCellDrawType,
-  MousePixelPos,
+  CanvasGridDoubleClickEvent,
+  PointerPixelPos,
 } from "./ngx-canvas-grid.types";
 
 const DEFAULT_CELL_WIDTH = 20;
@@ -63,8 +63,12 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   private contexts: CanvasRenderingContext2D[] = [];
   private lastCanvasLayer!: HTMLCanvasElement;
   private redrawIndices: Set<number> = new Set();
-  private pressedTarget: CanvasGridElement | null = null;
-  private downButtonId: number | null = null;
+  private activeElementsByPtrId: Map<
+    number,
+    { element: CanvasGridElement } & PointerPixelPos
+  > = new Map();
+  private draggedPointerIds: Set<number> = new Set();
+  private movingPointers: Map<number, PointerEvent> = new Map();
   private lastRenderTime: number = 0;
   private _cellWidth = signal<number>(
     this._defaults?.cellWidth ?? DEFAULT_CELL_WIDTH
@@ -122,7 +126,6 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   private readonly _length = computed(() => this._rows() * this._cols());
   private readonly _deltaTime = signal<number>(0);
   private readonly _elapsedTime = signal<number>(0);
-  private readonly _draggingButtonId = signal<number | null>(null);
   private readonly _canvasWidth = computed(() => {
     const totalGapWidth = this._colGaps()[this._colGaps().length - 1].prefixSum;
     return this._cellWidth() * this._cols() + totalGapWidth;
@@ -181,19 +184,19 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
 
   @Output() moveEvent = new EventEmitter<CanvasGridMoveEvent>();
   @Output() singleClickEvent = new EventEmitter<CanvasGridClickEvent>();
-  @Output() doubleClickEvent = new EventEmitter<CanvasGridClickEvent>();
+  @Output() doubleClickEvent = new EventEmitter<CanvasGridDoubleClickEvent>();
   @Output() dragEvent = new EventEmitter<CanvasGridDragEvent>();
   @Output() dropEvent = new EventEmitter<CanvasGridDropEvent>();
   @Output() keyDownEvent = new EventEmitter<string>();
   @Output() canvasSizeChangedEvent = new EventEmitter<PixelExtent>();
 
-  private boundOnMouseMove = this.onMouseMove.bind(this);
-  private boundOnMouseDown = this.onMouseDown.bind(this);
-  private boundOnMouseUp = this.onMouseUp.bind(this);
+  private boundOnPointerMove = this.onPointerMove.bind(this);
+  private boundOnPointerDown = this.onPointerDown.bind(this);
+  private boundOnPointerUp = this.onPointerUp.bind(this);
   private boundOnDoubleClick = this.onDoubleClick.bind(this);
   private boundOnKeyDown = this.onKeyDown.bind(this);
   private boundOnContextMenu = this.onContextMenu.bind(this);
-  private boundOnMouseLeave = this.onMouseLeave.bind(this);
+  private boundOnPointerLeave = this.onPointerLeave.bind(this);
 
   readonly state: Readonly<CanvasGridState>;
 
@@ -211,7 +214,6 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
       layerCount: this._layerCount,
       deltaTime: this._deltaTime.asReadonly(),
       elapsedTime: this._elapsedTime.asReadonly(),
-      draggingButtonId: this._draggingButtonId.asReadonly(),
     };
 
     effect(() => {
@@ -244,27 +246,27 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     this.lastCanvasLayer = this.canvasLayerElements.last.nativeElement;
 
     this.ngZone.runOutsideAngular(() => {
-      this.lastCanvasLayer.addEventListener("mousemove", this.boundOnMouseMove);
-      this.lastCanvasLayer.addEventListener("mousedown", this.boundOnMouseDown);
-      this.lastCanvasLayer.addEventListener("mouseup", this.boundOnMouseUp);
+      this.lastCanvasLayer.addEventListener(
+        "pointermove",
+        this.boundOnPointerMove
+      );
+      this.lastCanvasLayer.addEventListener(
+        "pointerdown",
+        this.boundOnPointerDown
+      );
+      this.lastCanvasLayer.addEventListener("pointerup", this.boundOnPointerUp);
       this.lastCanvasLayer.addEventListener(
         "dblclick",
         this.boundOnDoubleClick
       );
-      this.lastCanvasLayer.addEventListener(
-        "keydown",
-        this.boundOnKeyDown,
-        false
-      );
+      this.lastCanvasLayer.addEventListener("keydown", this.boundOnKeyDown);
       this.lastCanvasLayer.addEventListener(
         "contextmenu",
-        this.boundOnContextMenu,
-        false
+        this.boundOnContextMenu
       );
       this.lastCanvasLayer.addEventListener(
-        "mouseleave",
-        this.boundOnMouseLeave,
-        false
+        "pointerleave",
+        this.boundOnPointerLeave
       );
       this.render(0);
     });
@@ -272,14 +274,17 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.lastCanvasLayer.removeEventListener(
-      "mousemove",
-      this.boundOnMouseMove
+      "pointermove",
+      this.boundOnPointerMove
     );
     this.lastCanvasLayer.removeEventListener(
-      "mousedown",
-      this.boundOnMouseDown
+      "pointerdown",
+      this.boundOnPointerDown
     );
-    this.lastCanvasLayer.removeEventListener("mouseup", this.boundOnMouseUp);
+    this.lastCanvasLayer.removeEventListener(
+      "pointerup",
+      this.boundOnPointerUp
+    );
     this.lastCanvasLayer.removeEventListener(
       "dblclick",
       this.boundOnDoubleClick
@@ -290,8 +295,8 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
       this.boundOnContextMenu
     );
     this.lastCanvasLayer.removeEventListener(
-      "mouseleave",
-      this.boundOnMouseLeave
+      "pointerleave",
+      this.boundOnPointerLeave
     );
   }
 
@@ -304,34 +309,49 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     event.preventDefault();
   }
 
-  private onMouseMove(event: MouseEvent) {
+  private onPointerMove(event: PointerEvent) {
+    const moving = this.movingPointers.get(event.pointerId);
+    if (moving?.clientX === event.clientX && moving.clientY === event.clientY) {
+      return;
+    }
+    this.movingPointers.set(event.pointerId, event);
     const target = this.getTargetFromEvent(event);
     this.moveEvent.emit({
+      browserEvent: event,
       target: target.element,
-      mouseX: target.mouseX,
-      mouseY: target.mouseY,
+      pointerX: target.pointerX,
+      pointerY: target.pointerY,
     });
-    if (this.pressedTarget !== null && this.downButtonId !== null) {
-      this._draggingButtonId.set(this.downButtonId);
+    const active = this.activeElementsByPtrId.get(event.pointerId);
+    if (
+      active &&
+      active.pointerX !== target.pointerX &&
+      active.pointerY !== target.pointerY
+    ) {
+      this.draggedPointerIds.add(event.pointerId);
       this.dragEvent.emit({
-        buttonId: this.downButtonId,
-        from: this.pressedTarget,
+        browserEvent: event,
+        from: active.element,
         to: target.element,
-        mouseX: target.mouseX,
-        mouseY: target.mouseY,
+        pointerX: target.pointerX,
+        pointerY: target.pointerY,
       });
     }
     event.stopPropagation();
     event.preventDefault();
   }
 
-  private onMouseDown(event: MouseEvent) {
+  private onPointerDown(event: PointerEvent) {
     const target = this.getTargetFromEvent(event);
-    this.downButtonId = event.button;
-    this.pressedTarget = target.element;
+    for (let active of this.activeElementsByPtrId.values()) {
+      if (this.equalElements(active.element, target.element)) {
+        return;
+      }
+    }
+    this.activeElementsByPtrId.set(event.pointerId, target);
+    this.lastCanvasLayer.focus();
     event.stopPropagation();
     event.preventDefault();
-    this.lastCanvasLayer.focus();
   }
 
   private equalElements(a: CanvasGridElement, b: CanvasGridElement) {
@@ -359,55 +379,74 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     return false;
   }
 
-  private onMouseUp(event: MouseEvent) {
-    const target = this.getTargetFromEvent(event);
-    if (
-      this.pressedTarget &&
-      this.equalElements(this.pressedTarget, target.element)
-    ) {
-      this.singleClickEvent.emit({
-        buttonId: event.button,
-        target: target.element,
-        mouseX: target.mouseX,
-        mouseY: target.mouseY,
-      });
-    }
-    if (this._draggingButtonId() === event.button) {
-      this._draggingButtonId.set(null);
-      if (this.pressedTarget !== null) {
-        this.dropEvent.emit({
-          buttonId: event.button,
-          from: this.pressedTarget,
-          to: target.element,
-          mouseX: target.mouseX,
-          mouseY: target.mouseY,
+  private onPointerUp(event: PointerEvent) {
+    const activeTarget = this.activeElementsByPtrId.get(event.pointerId);
+    if (activeTarget) {
+      const target = this.getTargetFromEvent(event);
+      const pointerDrags = this.draggedPointerIds.has(event.pointerId);
+      if (
+        !pointerDrags &&
+        this.equalElements(target.element, activeTarget.element)
+      ) {
+        this.singleClickEvent.emit({
+          browserEvent: event,
+          target: target.element,
+          pointerX: target.pointerX,
+          pointerY: target.pointerY,
         });
+      } else if (pointerDrags) {
+        this.draggedPointerIds.delete(event.pointerId);
+        {
+          this.dropEvent.emit({
+            browserEvent: event,
+            from: activeTarget.element,
+            to: target.element,
+            pointerX: target.pointerX,
+            pointerY: target.pointerY,
+          });
+        }
       }
+      this.activeElementsByPtrId.delete(event.pointerId);
     }
-    if (this.downButtonId === event.button) {
-      this.downButtonId = null;
-    }
-    this.pressedTarget = null;
-
     event.stopPropagation();
     event.preventDefault();
   }
 
   private onDoubleClick(event: MouseEvent) {
-    const target = this.getTargetFromEvent(event);
+    const target = this.getTargetFromEvent(
+      new PointerEvent("dblclick", {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      })
+    );
     this.doubleClickEvent.emit({
-      buttonId: event.button,
+      browserEvent: event,
       target: target.element,
-      mouseX: target.mouseX,
-      mouseY: target.mouseY,
+      pointerX: target.pointerX,
+      pointerY: target.pointerY,
     });
     event.stopPropagation();
     event.preventDefault();
     this.lastCanvasLayer.focus();
   }
 
-  private onMouseLeave(event: MouseEvent) {
-    this.boundOnMouseUp(event);
+  private onPointerLeave(event: PointerEvent) {
+    this.boundOnPointerUp(event);
+  }
+
+  private updateDeferredLayerIndices(layer: GridLayerState) {
+    layer.singleFrameCellGridPos.forEach((pos) => {
+      layer.singleFrameCellIndices.add(pos.row * this._cols() + pos.col);
+    });
+    layer.singleFrameCellGridPos.length = 0;
+    layer.multiFrameCellGridPos.forEach((pos) => {
+      layer.multiFrameCellIndices.add(pos.row * this._cols() + pos.col);
+    });
+    layer.multiFrameCellGridPos.length = 0;
+    layer.delMultiFrameCellGridPos.forEach((pos) => {
+      layer.multiFrameCellIndices.delete(pos.row * this._cols() + pos.col);
+    });
+    layer.delMultiFrameCellGridPos.length = 0;
   }
 
   private render(timestamp: DOMHighResTimeStamp): void {
@@ -417,8 +456,9 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     this._elapsedTime.update((prev) => (prev += this._deltaTime()));
     if (this.fpsThrottle === undefined || fps < this.fpsThrottle) {
       for (let i = 0; i < this._layerCount(); ++i) {
-        if (this._layers()[i].redrawAll) {
-          const fns = this._layers()[i].drawFn;
+        let layer = this._layers()[i];
+        if (layer.redrawAll || layer.redrawPerFrame) {
+          const fns = layer.drawFn;
           const isCellFnType = fns.type === PerCellDrawType;
           this.contexts[i].clearRect(
             0,
@@ -427,22 +467,24 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
             this._canvasHeight()
           );
           if (isCellFnType) {
+            this.updateDeferredLayerIndices(layer);
             this.cells().forEach((cell) => {
               fns.drawFn(this.state, this.contexts[i], cell);
             });
-            this._layers()[i].singleFrameCellIndices.clear();
+            layer.singleFrameCellIndices.clear();
           } else {
             fns.drawFn(this.state, this.contexts[i]);
           }
-          this._layers()[i].redrawAll = false;
+          layer.redrawAll = false;
         } else {
-          const fns = this._layers()[i].drawFn;
+          const fns = layer.drawFn;
           const isCellFnType = fns.type === PerCellDrawType;
           if (isCellFnType) {
-            this._layers()[i].singleFrameCellIndices.forEach((index) =>
+            this.updateDeferredLayerIndices(layer);
+            layer.singleFrameCellIndices.forEach((index) =>
               this.redrawIndices.add(index)
             );
-            this._layers()[i].multiFrameCellIndices.forEach((index) =>
+            layer.multiFrameCellIndices.forEach((index) =>
               this.redrawIndices.add(index)
             );
             this.redrawIndices.forEach((index) => {
@@ -453,18 +495,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
               }
             });
             this.redrawIndices.clear();
-            this._layers()[i].singleFrameCellIndices.clear();
-          } else if (
-            this._layers()[i].drawStrategy ===
-            CanvasGridLayerDrawStrategy.PER_FRAME
-          ) {
-            this.contexts[i].clearRect(
-              0,
-              0,
-              this._canvasWidth(),
-              this._canvasHeight()
-            );
-            fns.drawFn(this.state, this.contexts[i]);
+            layer.singleFrameCellIndices.clear();
           }
         }
       }
@@ -474,8 +505,8 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   }
 
   private getTargetFromEvent(
-    event: MouseEvent
-  ): { element: CanvasGridElement } & MousePixelPos {
+    event: PointerEvent
+  ): { element: CanvasGridElement } & PointerPixelPos {
     const boundingRect = this.lastCanvasLayer.getBoundingClientRect();
     const x = Math.min(
       Math.max(event.clientX - boundingRect.x, 0),
@@ -501,8 +532,8 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
       const index = rowI.value * this._cols() + colI.value;
       return {
         element: this.cells()[index],
-        mouseX: x,
-        mouseY: y,
+        pointerX: x,
+        pointerY: y,
       };
     }
     if (colI.type === "gap" && rowI.type === "gap") {
@@ -512,14 +543,14 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
           colGap: this._colGaps()[colI.value],
           rowGap: this._rowGaps()[rowI.value],
         },
-        mouseX: x,
-        mouseY: y,
+        pointerX: x,
+        pointerY: y,
       };
     }
     if (colI.type === "gap") {
-      return { element: this._colGaps()[colI.value], mouseX: x, mouseY: y };
+      return { element: this._colGaps()[colI.value], pointerX: x, pointerY: y };
     }
-    return { element: this._rowGaps()[rowI.value], mouseX: x, mouseY: y };
+    return { element: this._rowGaps()[rowI.value], pointerX: x, pointerY: y };
   }
 
   private findTargetCoordinate(

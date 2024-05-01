@@ -5,6 +5,8 @@
     position: absolute;
     top: 0;
     left: 0;
+    touch-action: none;
+    user-select: none;
 
     &:first-child {
       background: var(--canvas-background, DEFAULT_BACKGROUND);
@@ -14,6 +16,7 @@
     }
     &:focus {
       outline: none;
+      -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
     }
   }
 }
