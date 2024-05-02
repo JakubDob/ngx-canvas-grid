@@ -36,6 +36,7 @@ import {
   PerCellDrawType,
   CanvasGridDoubleClickEvent,
   PointerPixelPos,
+  CanvasGridContextMenuEvent,
 } from "./ngx-canvas-grid.types";
 
 const DEFAULT_CELL_WIDTH = 20;
@@ -188,6 +189,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   @Output() dragEvent = new EventEmitter<CanvasGridDragEvent>();
   @Output() dropEvent = new EventEmitter<CanvasGridDropEvent>();
   @Output() keyDownEvent = new EventEmitter<string>();
+  @Output() contextMenuEvent = new EventEmitter<CanvasGridContextMenuEvent>();
   @Output() canvasSizeChangedEvent = new EventEmitter<PixelExtent>();
 
   private boundOnPointerMove = this.onPointerMove.bind(this);
@@ -305,6 +307,18 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   }
 
   private onContextMenu(event: MouseEvent) {
+    const target = this.getTargetFromEvent(
+      new PointerEvent("contextmenu", {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      })
+    );
+    this.contextMenuEvent.emit({
+      browserEvent: event,
+      target: target.element,
+      pointerX: target.pointerX,
+      pointerY: target.pointerY,
+    });
     event.stopPropagation();
     event.preventDefault();
   }

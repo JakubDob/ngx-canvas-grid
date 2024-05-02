@@ -89,6 +89,11 @@ export type CanvasGridClickEvent = {
   target: CanvasGridElement;
 } & PointerPixelPos;
 
+export type CanvasGridContextMenuEvent = {
+  browserEvent: MouseEvent;
+  target: CanvasGridElement;
+} & PointerPixelPos;
+
 export type CanvasGridCellDrawFn = (
   state: CanvasGridState,
   context: CanvasRenderingContext2D,
