@@ -1,8 +1,8 @@
-import { InjectionToken, Signal } from "@angular/core";
+import { InjectionToken, Signal } from '@angular/core';
 
-export const CellType = "cell";
-export const GapType = "gap";
-export const GapPairType = "gap_pair";
+export const CellType = 'cell';
+export const GapType = 'gap';
+export const GapPairType = 'gap_pair';
 
 export type CanvasGridState = {
   rowGaps: Signal<GridGap[]>;
@@ -95,18 +95,20 @@ export type CanvasGridContextMenuEvent = {
 } & PointerPixelPos;
 
 export type CanvasGridCellDrawFn = (
-  state: CanvasGridState,
   context: CanvasRenderingContext2D,
-  cell: GridCell
+  cell: GridCell,
+  state: CanvasGridState,
+  layerIndex: number
 ) => void;
 
 export type CanvasGridLayerDrawFn = (
+  context: CanvasRenderingContext2D,
   state: CanvasGridState,
-  context: CanvasRenderingContext2D
+  layerIndex: number
 ) => void;
 
-export const PerCellDrawType = "per_cell";
-export const WholeCanvasDrawType = "whole_canvas";
+export const PerCellDrawType = 'per_cell';
+export const WholeCanvasDrawType = 'whole_canvas';
 
 export type CanvasGridCellFn = {
   type: typeof PerCellDrawType;
@@ -150,4 +152,4 @@ export type CanvasGridDefaultOptions = {
 };
 
 export const CANVAS_GRID_DEFAULT_OPTIONS =
-  new InjectionToken<CanvasGridDefaultOptions>("CANVAS_GRID_DEFAULT_OPTIONS");
+  new InjectionToken<CanvasGridDefaultOptions>('CANVAS_GRID_DEFAULT_OPTIONS');

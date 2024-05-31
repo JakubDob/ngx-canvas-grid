@@ -15,8 +15,8 @@ import {
   Signal,
   signal,
   ViewChildren,
-} from "@angular/core";
-import { LayerController } from "./ngx-canvas-grid-builder";
+} from '@angular/core';
+import { LayerController } from './ngx-canvas-grid-builder';
 import {
   CanvasGridClickEvent,
   CanvasGridDefaultOptions,
@@ -37,22 +37,22 @@ import {
   CanvasGridDoubleClickEvent,
   PointerPixelPos,
   CanvasGridContextMenuEvent,
-} from "./ngx-canvas-grid.types";
+} from './ngx-canvas-grid.types';
 
 const DEFAULT_CELL_WIDTH = 20;
 const DEFAULT_CELL_HEIGHT = 20;
 const DEFAULT_ROWS = 9;
 const DEFAULT_COLS = 9;
 const DEFAULT_GAP_SIZE = 1;
-const DEFAULT_BACKGROUND_COLOR = "gray";
-const DEFAULT_CURSOR = "cell";
+const DEFAULT_BACKGROUND_COLOR = 'gray';
+const DEFAULT_CURSOR = 'cell';
 
 @Component({
-  selector: "ngx-canvas-grid",
+  selector: 'ngx-canvas-grid',
   standalone: true,
   imports: [],
-  templateUrl: "./ngx-canvas-grid.component.html",
-  styleUrl: "./ngx-canvas-grid.component.scss",
+  templateUrl: './ngx-canvas-grid.component.html',
+  styleUrl: './ngx-canvas-grid.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
@@ -88,11 +88,11 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     let sum = 0;
     let yOffset = 0;
     for (let i = 0; i < this._rows() + 1; ++i) {
-      const value = typeof fn === "number" ? fn : fn.rowFn(i);
+      const value = typeof fn === 'number' ? fn : fn.rowFn(i);
       yOffset += this._cellHeight() * i + sum;
       sum += value;
       gaps.push({
-        type: "gap",
+        type: 'gap',
         col: 0,
         prefixSum: sum,
         row: i,
@@ -109,11 +109,11 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     let sum = 0;
     let xOffset = 0;
     for (let i = 0; i < this._cols() + 1; ++i) {
-      const value = typeof fn === "number" ? fn : fn.colFn(i);
+      const value = typeof fn === 'number' ? fn : fn.colFn(i);
       xOffset += this._cellWidth() * i + sum;
       sum += value;
       gaps.push({
-        type: "gap",
+        type: 'gap',
         col: i,
         prefixSum: sum,
         row: 0,
@@ -145,7 +145,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
         const row = Math.floor(i / this._cols());
         const col = i % this._cols();
         return {
-          type: "cell",
+          type: 'cell',
           x: col * this._cellWidth() + this._colGaps()[col].prefixSum,
           y: row * this._cellHeight() + this._rowGaps()[row].prefixSum,
           w: this._cellWidth(),
@@ -158,30 +158,30 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     );
   });
 
-  @ViewChildren("canvasLayer", { read: ElementRef })
+  @ViewChildren('canvasLayer', { read: ElementRef })
   canvasLayerElements!: QueryList<ElementRef<HTMLCanvasElement>>;
 
-  @Input("cellWidth") set cellWidth(value: number) {
+  @Input('cellWidth') set cellWidth(value: number) {
     this._cellWidth.set(Math.floor(value));
   }
-  @Input("cellHeight") set cellHeight(value: number) {
+  @Input('cellHeight') set cellHeight(value: number) {
     this._cellHeight.set(Math.floor(value));
   }
-  @Input("rows") set rows(value: number) {
+  @Input('rows') set rows(value: number) {
     this._rows.set(value);
   }
-  @Input("cols") set cols(value: number) {
+  @Input('cols') set cols(value: number) {
     this._cols.set(value);
   }
-  @Input("gapSize") set gapSize(value: CanvasGridGapSizeType) {
+  @Input('gapSize') set gapSize(value: CanvasGridGapSizeType) {
     this._gapSizeGen.set(value);
   }
-  @Input({ alias: "controller", required: true }) set controller(
+  @Input({ alias: 'controller', required: true }) set controller(
     value: LayerController
   ) {
     this._layers.set(value.layers);
   }
-  @Input("fpsThrottle") fpsThrottle?: number = this._defaults?.fpsThrottle;
+  @Input('fpsThrottle') fpsThrottle?: number = this._defaults?.fpsThrottle;
 
   @Output() moveEvent = new EventEmitter<CanvasGridMoveEvent>();
   @Output() singleClickEvent = new EventEmitter<CanvasGridClickEvent>();
@@ -241,7 +241,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
 
   ngAfterViewInit() {
     this.contexts = this.canvasLayerElements
-      .map((element) => element.nativeElement.getContext("2d"))
+      .map((element) => element.nativeElement.getContext('2d'))
       .filter(
         (element): element is NonNullable<typeof element> => element !== null
       );
@@ -249,25 +249,25 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
 
     this.ngZone.runOutsideAngular(() => {
       this.lastCanvasLayer.addEventListener(
-        "pointermove",
+        'pointermove',
         this.boundOnPointerMove
       );
       this.lastCanvasLayer.addEventListener(
-        "pointerdown",
+        'pointerdown',
         this.boundOnPointerDown
       );
-      this.lastCanvasLayer.addEventListener("pointerup", this.boundOnPointerUp);
+      this.lastCanvasLayer.addEventListener('pointerup', this.boundOnPointerUp);
       this.lastCanvasLayer.addEventListener(
-        "dblclick",
+        'dblclick',
         this.boundOnDoubleClick
       );
-      this.lastCanvasLayer.addEventListener("keydown", this.boundOnKeyDown);
+      this.lastCanvasLayer.addEventListener('keydown', this.boundOnKeyDown);
       this.lastCanvasLayer.addEventListener(
-        "contextmenu",
+        'contextmenu',
         this.boundOnContextMenu
       );
       this.lastCanvasLayer.addEventListener(
-        "pointerleave",
+        'pointerleave',
         this.boundOnPointerLeave
       );
       this.render(0);
@@ -276,28 +276,28 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.lastCanvasLayer.removeEventListener(
-      "pointermove",
+      'pointermove',
       this.boundOnPointerMove
     );
     this.lastCanvasLayer.removeEventListener(
-      "pointerdown",
+      'pointerdown',
       this.boundOnPointerDown
     );
     this.lastCanvasLayer.removeEventListener(
-      "pointerup",
+      'pointerup',
       this.boundOnPointerUp
     );
     this.lastCanvasLayer.removeEventListener(
-      "dblclick",
+      'dblclick',
       this.boundOnDoubleClick
     );
-    this.lastCanvasLayer.removeEventListener("keydown", this.boundOnKeyDown);
+    this.lastCanvasLayer.removeEventListener('keydown', this.boundOnKeyDown);
     this.lastCanvasLayer.removeEventListener(
-      "contextmenu",
+      'contextmenu',
       this.boundOnContextMenu
     );
     this.lastCanvasLayer.removeEventListener(
-      "pointerleave",
+      'pointerleave',
       this.boundOnPointerLeave
     );
   }
@@ -308,7 +308,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
 
   private onContextMenu(event: MouseEvent) {
     const target = this.getTargetFromEvent(
-      new PointerEvent("contextmenu", {
+      new PointerEvent('contextmenu', {
         clientX: event.clientX,
         clientY: event.clientY,
       })
@@ -373,16 +373,16 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
       return false;
     }
     if (
-      ((a.type === "cell" && b.type === "cell") ||
-        (a.type === "gap" && b.type === "gap")) &&
+      ((a.type === 'cell' && b.type === 'cell') ||
+        (a.type === 'gap' && b.type === 'gap')) &&
       a.row === b.row &&
       a.col === b.col
     ) {
       return true;
     }
     if (
-      a.type === "gap_pair" &&
-      b.type === "gap_pair" &&
+      a.type === 'gap_pair' &&
+      b.type === 'gap_pair' &&
       a.rowGap.row === b.rowGap.row &&
       a.rowGap.col === b.rowGap.col &&
       a.colGap.row === b.colGap.row &&
@@ -428,7 +428,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
 
   private onDoubleClick(event: MouseEvent) {
     const target = this.getTargetFromEvent(
-      new PointerEvent("dblclick", {
+      new PointerEvent('dblclick', {
         clientX: event.clientX,
         clientY: event.clientY,
       })
@@ -483,11 +483,11 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
           if (isCellFnType) {
             this.updateDeferredLayerIndices(layer);
             this.cells().forEach((cell) => {
-              fns.drawFn(this.state, this.contexts[i], cell);
+              fns.drawFn(this.contexts[i], cell, this.state, i);
             });
             layer.singleFrameCellIndices.clear();
           } else {
-            fns.drawFn(this.state, this.contexts[i]);
+            fns.drawFn(this.contexts[i], this.state, i);
           }
           layer.redrawAll = false;
         } else {
@@ -505,7 +505,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
               if (index < this._length()) {
                 const cell = this.cells()[index];
                 this.contexts[i].clearRect(cell.x, cell.y, cell.w, cell.h);
-                fns.drawFn(this.state, this.contexts[i], cell);
+                fns.drawFn(this.contexts[i], cell, this.state, i);
               }
             });
             this.redrawIndices.clear();
@@ -542,7 +542,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
       this._rows(),
       y
     );
-    if (colI.type === "cell" && rowI.type === "cell") {
+    if (colI.type === 'cell' && rowI.type === 'cell') {
       const index = rowI.value * this._cols() + colI.value;
       return {
         element: this.cells()[index],
@@ -550,10 +550,10 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
         pointerY: y,
       };
     }
-    if (colI.type === "gap" && rowI.type === "gap") {
+    if (colI.type === 'gap' && rowI.type === 'gap') {
       return {
         element: {
-          type: "gap_pair",
+          type: 'gap_pair',
           colGap: this._colGaps()[colI.value],
           rowGap: this._rowGaps()[rowI.value],
         },
@@ -561,7 +561,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
         pointerY: y,
       };
     }
-    if (colI.type === "gap") {
+    if (colI.type === 'gap') {
       return { element: this._colGaps()[colI.value], pointerX: x, pointerY: y };
     }
     return { element: this._rowGaps()[rowI.value], pointerX: x, pointerY: y };
@@ -585,13 +585,13 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
         leftI = midI + 1;
       } else {
         return {
-          type: "cell",
+          type: 'cell',
           value: midI,
         };
       }
     }
     return {
-      type: "gap",
+      type: 'gap',
       value: leftI,
     };
   }

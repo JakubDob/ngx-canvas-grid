@@ -4,7 +4,7 @@ import {
   GridLayerState,
   PerCellDrawType,
   WholeCanvasDrawType,
-} from "./ngx-canvas-grid.types";
+} from './ngx-canvas-grid.types';
 
 export interface LayerBuilder {
   addLayerDrawnAsWhole(drawFn: CanvasGridLayerDrawFn): LayerBuilder;
@@ -34,12 +34,12 @@ export class LayerController {
       this._layers[rowOrIndexOrLayer].redrawAll = true;
     } else {
       if (layer === undefined) {
-        if (this._layers[colOrLayer].drawFn.type === "whole_canvas") {
+        if (this._layers[colOrLayer].drawFn.type === 'whole_canvas') {
           return;
         }
         this._layers[colOrLayer].singleFrameCellIndices.add(rowOrIndexOrLayer);
       } else {
-        if (this._layers[layer].drawFn.type === "whole_canvas") {
+        if (this._layers[layer].drawFn.type === 'whole_canvas') {
           return;
         }
         this._layers[layer].singleFrameCellGridPos.push({
@@ -62,12 +62,12 @@ export class LayerController {
       this._layers[rowOrIndexOrLayer].redrawPerFrame = true;
     } else {
       if (layer === undefined) {
-        if (this._layers[colOrLayer].drawFn.type === "whole_canvas") {
+        if (this._layers[colOrLayer].drawFn.type === 'whole_canvas') {
           return;
         }
         this._layers[colOrLayer].multiFrameCellIndices.add(rowOrIndexOrLayer);
       } else {
-        if (this._layers[layer].drawFn.type === "whole_canvas") {
+        if (this._layers[layer].drawFn.type === 'whole_canvas') {
           return;
         }
         this._layers[layer].multiFrameCellGridPos.push({
@@ -94,7 +94,7 @@ export class LayerController {
           rowOrIndexOrLayer
         );
       } else {
-        if (this._layers[layer].drawFn.type === "whole_canvas") {
+        if (this._layers[layer].drawFn.type === 'whole_canvas') {
           return;
         }
         this._layers[layer].delMultiFrameCellGridPos.push({

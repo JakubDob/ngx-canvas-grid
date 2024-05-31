@@ -1,9 +1,9 @@
-import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { layerControllerBuilder } from "./ngx-canvas-grid-builder";
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { layerControllerBuilder } from './ngx-canvas-grid-builder';
 
-import { NgxCanvasGridComponent } from "./ngx-canvas-grid.component";
+import { NgxCanvasGridComponent } from './ngx-canvas-grid.component';
 
-describe("NgxCanvasGridComponent", () => {
+describe('NgxCanvasGridComponent', () => {
   let component: NgxCanvasGridComponent;
   let fixture: ComponentFixture<NgxCanvasGridComponent>;
 
@@ -20,7 +20,7 @@ describe("NgxCanvasGridComponent", () => {
     fixture.detectChanges();
   });
 
-  it("should create", () => {
+  it('should create', () => {
     expect(component).toBeTruthy();
   });
 });
