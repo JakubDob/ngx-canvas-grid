@@ -1,0 +1,15 @@
+@use "sass:map";
+
+$primary-palette: (
+  darkest: #0c0f1d,
+  dark: #181e3a,
+  light: #42539e,
+  lightest: #6f7fc3,
+);
+
+@function get-color($value) {
+  @if map.has-key($primary-palette, $value) {
+    @return map.get($primary-palette, $value);
+  }
+  @error $value + " does not exist in " + "[" + map.keys($primary-palette) + "]";
+}

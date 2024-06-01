@@ -1,0 +1,64 @@
+@use "demo_palette" as pal;
+
+.container {
+  display: flex;
+  min-height: 100%;
+  min-width: fit-content;
+}
+
+.sidebar {
+  min-width: 380px;
+  background-color: pal.get-color(dark);
+  color: bisque;
+  box-shadow: 8px 0px 10px 0px black;
+  padding: 0 10px 0 10px;
+  z-index: 1;
+
+  .controls {
+    display: flex;
+    flex-direction: column;
+
+    section {
+      input[type="range"] {
+        width: 90%;
+      }
+      .checkbox {
+        display: flex;
+        align-items: center;
+        input[type="checkbox"] {
+          margin-right: 10px;
+          width: 20px;
+          height: 20px;
+        }
+      }
+
+      .slider-value {
+        vertical-align: top;
+        margin-left: 10px;
+      }
+    }
+  }
+
+  h2 {
+    text-align: center;
+  }
+}
+
+hr {
+  border: 1px solid pal.get-color(lightest);
+  border-radius: 10px;
+  width: 100%;
+}
+
+.content {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  align-items: center;
+  background-color: pal.get-color(darkest);
+}
+
+ngx-canvas-grid {
+  margin: 20px;
+  // --canvas-background: hsla(0, 0%, 0%, 0);
+}

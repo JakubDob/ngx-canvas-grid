@@ -1,0 +1,124 @@
+<div class="container">
+  <div class="sidebar">
+    <h2>ngx-canvas-grid</h2>
+    <hr />
+    <div class="controls">
+      <section>
+        <label for="row-count">row count</label>
+        <input
+          type="range"
+          min="1"
+          max="50"
+          id="row-count"
+          [value]="rows()"
+          (input)="rows.set(+$any($event.target).value)"
+        />
+        <span class="slider-value">{{ rows() }}</span>
+      </section>
+      <section>
+        <label for="col-count">column count</label>
+        <input
+          type="range"
+          min="1"
+          max="50"
+          id="col-count"
+          [value]="cols()"
+          (input)="cols.set(+$any($event.target).value)"
+        />
+        <span class="slider-value">{{ cols() }}</span>
+      </section>
+      <section>
+        <label for="cell-width">cell width</label>
+        <input
+          type="range"
+          min="1"
+          max="50"
+          id="cell-width"
+          [value]="cellWidth()"
+          (input)="cellWidth.set(+$any($event.target).value)"
+        />
+        <span class="slider-value">{{ cellWidth() }}</span>
+      </section>
+      <section>
+        <label for="cell-height">cell height</label>
+        <input
+          type="range"
+          min="1"
+          max="50"
+          id="cell-height"
+          [value]="cellHeight()"
+          (input)="cellHeight.set(+$any($event.target).value)"
+        />
+        <span class="slider-value">{{ cellHeight() }}</span>
+      </section>
+      <section>
+        <label for="primary-gap-size">primary gap</label>
+        <input
+          type="range"
+          min="0"
+          max="10"
+          id="primary-gap-size"
+          [value]="primaryGapSizeSlider()"
+          (input)="primaryGapSizeSlider.set(+$any($event.target).value)"
+        />
+        <span class="slider-value">{{ primaryGapSizeSlider() }}</span>
+      </section>
+      <section>
+        <label for="secondary-gap-size">secondary gap</label>
+        <input
+          type="range"
+          min="0"
+          max="10"
+          id="secondary-gap-size"
+          [value]="secondaryGapSizeSlider()"
+          (input)="secondaryGapSizeSlider.set(+$any($event.target).value)"
+        />
+        <span class="slider-value">{{ secondaryGapSizeSlider() }}</span>
+      </section>
+      <section>
+        <label for="fps-throttle">fps throttle</label>
+        <input
+          type="range"
+          min="0"
+          max="60"
+          id="fps-throttle"
+          [value]="fpsThrottle()"
+          (input)="fpsThrottle.set(+$any($event.target).value)"
+        />
+        <span class="slider-value">{{ fpsThrottle() }}</span>
+      </section>
+      <hr />
+      <section>
+        <h2>Layers</h2>
+        @for(layer of layerController.layers; track layer){
+        <div class="checkbox">
+          <input
+            type="checkbox"
+            name="layer{{ $index }}"
+            id="layer{{ $index }}"
+            [checked]="!layer.hidden()"
+            (change)="layer.hidden.set(!$any($event.target).checked)"
+          />
+          <label for="layer{{ $index }}">{{ layerNames[$index] }}</label>
+        </div>
+        }
+      </section>
+    </div>
+  </div>
+  <div class="content">
+    <ngx-canvas-grid
+      [cellWidth]="cellWidth()"
+      [cellHeight]="cellHeight()"
+      [gapSize]="gapSize"
+      [rows]="rows()"
+      [cols]="cols()"
+      [fpsThrottle]="fpsThrottle()"
+      [controller]="layerController"
+      (singleClickEvent)="onClick($event)"
+      (dragEvent)="onDrag($event)"
+      (dropEvent)="onDrop($event)"
+      (moveEvent)="onMove($event)"
+      (pointerLeaveEvent)="onPointerLeave($event)"
+    ></ngx-canvas-grid>
+  </div>
+</div>
