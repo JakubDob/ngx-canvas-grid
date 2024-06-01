@@ -1,4 +1,5 @@
 <div
+  #container
   class="container"
   [style.width.px]="state.canvasWidth()"
   [style.height.px]="state.canvasHeight()"
@@ -6,6 +7,7 @@
   @for(i of [].constructor(state.layerCount()) ;track $index) {
   <canvas
     [attr.tabindex]="$index === state.layerCount() - 1 ? 0 : null"
+    [style.visibility]="_layers()[$index].hidden() ? 'hidden' : 'visible'"
     #canvasLayer
   ></canvas>
   }

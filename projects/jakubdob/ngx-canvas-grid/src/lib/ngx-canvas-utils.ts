@@ -1,4 +1,4 @@
-import { CanvasGridState, PixelRect } from "./ngx-canvas-grid.types";
+import { CanvasGridState, PixelRect } from './ngx-canvas-grid.types';
 
 export function drawText(
   context: CanvasRenderingContext2D,
@@ -7,7 +7,7 @@ export function drawText(
   fillStyle: string,
   rect: PixelRect
 ) {
-  context.textAlign = "center";
+  context.textAlign = 'center';
   context.font = font;
   context.fillStyle = fillStyle;
   const cellCenterX = rect.x + rect.w / 2;

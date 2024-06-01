@@ -9,10 +9,10 @@
     user-select: none;
 
     &:first-child {
-      background: var(--canvas-background, DEFAULT_BACKGROUND);
+      background: var(--canvas-background, transparent);
     }
     &:last-child {
-      cursor: var(--canvas-cursor, DEFAULT_CURSOR);
+      cursor: var(--canvas-cursor, cell);
     }
     &:focus {
       outline: none;

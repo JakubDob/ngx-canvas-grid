@@ -14,6 +14,7 @@ import {
   QueryList,
   Signal,
   signal,
+  ViewChild,
   ViewChildren,
 } from '@angular/core';
 import { LayerController } from './ngx-canvas-grid-builder';
@@ -35,8 +36,8 @@ import {
   GridLayerState,
   PerCellDrawType,
   CanvasGridDoubleClickEvent,
-  PointerPixelPos,
   CanvasGridContextMenuEvent,
+  PixelPos,
 } from './ngx-canvas-grid.types';
 
 const DEFAULT_CELL_WIDTH = 20;
@@ -44,8 +45,6 @@ const DEFAULT_CELL_HEIGHT = 20;
 const DEFAULT_ROWS = 9;
 const DEFAULT_COLS = 9;
 const DEFAULT_GAP_SIZE = 1;
-const DEFAULT_BACKGROUND_COLOR = 'gray';
-const DEFAULT_CURSOR = 'cell';
 
 @Component({
   selector: 'ngx-canvas-grid',
@@ -62,11 +61,10 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     { optional: true }
   );
   private contexts: CanvasRenderingContext2D[] = [];
-  private lastCanvasLayer!: HTMLCanvasElement;
   private redrawIndices: Set<number> = new Set();
   private activeElementsByPtrId: Map<
     number,
-    { element: CanvasGridElement } & PointerPixelPos
+    { element: CanvasGridElement; pointerPos: PixelPos }
   > = new Map();
   private draggedPointerIds: Set<number> = new Set();
   private movingPointers: Map<number, PointerEvent> = new Map();
@@ -136,7 +134,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
       this._rowGaps()[this._rowGaps().length - 1].prefixSum;
     return this._cellHeight() * this._rows() + totalGapHeight;
   });
-  private readonly _layers = signal<ReadonlyArray<GridLayerState>>([]);
+  readonly _layers = signal<ReadonlyArray<GridLayerState>>([]);
   private readonly _layerCount = computed(() => this._layers().length);
   readonly cells = computed(() => {
     return Array.from<undefined, Readonly<GridCell>>(
@@ -157,6 +155,9 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
       }
     );
   });
+
+  @ViewChild('container', { read: ElementRef })
+  canvasContainer!: ElementRef<HTMLDivElement>;
 
   @ViewChildren('canvasLayer', { read: ElementRef })
   canvasLayerElements!: QueryList<ElementRef<HTMLCanvasElement>>;
@@ -191,6 +192,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   @Output() keyDownEvent = new EventEmitter<string>();
   @Output() contextMenuEvent = new EventEmitter<CanvasGridContextMenuEvent>();
   @Output() canvasSizeChangedEvent = new EventEmitter<PixelExtent>();
+  @Output() pointerLeaveEvent = new EventEmitter<PointerEvent>();
 
   private boundOnPointerMove = this.onPointerMove.bind(this);
   private boundOnPointerDown = this.onPointerDown.bind(this);
@@ -226,7 +228,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     });
 
     effect(() => {
-      if (this.lastCanvasLayer) {
+      if (this.canvasContainer) {
         this.canvasLayerElements.forEach((canvas) => {
           canvas.nativeElement.width = this._canvasWidth();
           canvas.nativeElement.height = this._canvasHeight();
@@ -245,28 +247,33 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
       .filter(
         (element): element is NonNullable<typeof element> => element !== null
       );
-    this.lastCanvasLayer = this.canvasLayerElements.last.nativeElement;
 
     this.ngZone.runOutsideAngular(() => {
-      this.lastCanvasLayer.addEventListener(
+      this.canvasContainer.nativeElement.addEventListener(
         'pointermove',
         this.boundOnPointerMove
       );
-      this.lastCanvasLayer.addEventListener(
+      this.canvasContainer.nativeElement.addEventListener(
         'pointerdown',
         this.boundOnPointerDown
       );
-      this.lastCanvasLayer.addEventListener('pointerup', this.boundOnPointerUp);
-      this.lastCanvasLayer.addEventListener(
+      this.canvasContainer.nativeElement.addEventListener(
+        'pointerup',
+        this.boundOnPointerUp
+      );
+      this.canvasContainer.nativeElement.addEventListener(
         'dblclick',
         this.boundOnDoubleClick
       );
-      this.lastCanvasLayer.addEventListener('keydown', this.boundOnKeyDown);
-      this.lastCanvasLayer.addEventListener(
+      this.canvasContainer.nativeElement.addEventListener(
+        'keydown',
+        this.boundOnKeyDown
+      );
+      this.canvasContainer.nativeElement.addEventListener(
         'contextmenu',
         this.boundOnContextMenu
       );
-      this.lastCanvasLayer.addEventListener(
+      this.canvasContainer.nativeElement.addEventListener(
         'pointerleave',
         this.boundOnPointerLeave
       );
@@ -275,28 +282,31 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    this.lastCanvasLayer.removeEventListener(
+    this.canvasContainer.nativeElement.removeEventListener(
       'pointermove',
       this.boundOnPointerMove
     );
-    this.lastCanvasLayer.removeEventListener(
+    this.canvasContainer.nativeElement.removeEventListener(
       'pointerdown',
       this.boundOnPointerDown
     );
-    this.lastCanvasLayer.removeEventListener(
+    this.canvasContainer.nativeElement.removeEventListener(
       'pointerup',
       this.boundOnPointerUp
     );
-    this.lastCanvasLayer.removeEventListener(
+    this.canvasContainer.nativeElement.removeEventListener(
       'dblclick',
       this.boundOnDoubleClick
     );
-    this.lastCanvasLayer.removeEventListener('keydown', this.boundOnKeyDown);
-    this.lastCanvasLayer.removeEventListener(
+    this.canvasContainer.nativeElement.removeEventListener(
+      'keydown',
+      this.boundOnKeyDown
+    );
+    this.canvasContainer.nativeElement.removeEventListener(
       'contextmenu',
       this.boundOnContextMenu
     );
-    this.lastCanvasLayer.removeEventListener(
+    this.canvasContainer.nativeElement.removeEventListener(
       'pointerleave',
       this.boundOnPointerLeave
     );
@@ -316,8 +326,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     this.contextMenuEvent.emit({
       browserEvent: event,
       target: target.element,
-      pointerX: target.pointerX,
-      pointerY: target.pointerY,
+      pointerPos: target.pointerPos,
     });
     event.stopPropagation();
     event.preventDefault();
@@ -333,22 +342,24 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     this.moveEvent.emit({
       browserEvent: event,
       target: target.element,
-      pointerX: target.pointerX,
-      pointerY: target.pointerY,
+      pointerPos: target.pointerPos,
     });
     const active = this.activeElementsByPtrId.get(event.pointerId);
     if (
       active &&
-      active.pointerX !== target.pointerX &&
-      active.pointerY !== target.pointerY
+      active.pointerPos.x !== target.pointerPos.x &&
+      active.pointerPos.y !== target.pointerPos.y
     ) {
       this.draggedPointerIds.add(event.pointerId);
       this.dragEvent.emit({
         browserEvent: event,
         from: active.element,
+        fromPixels: {
+          x: active.pointerPos.x,
+          y: active.pointerPos.y,
+        },
         to: target.element,
-        pointerX: target.pointerX,
-        pointerY: target.pointerY,
+        pointerPos: target.pointerPos,
       });
     }
     event.stopPropagation();
@@ -363,7 +374,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
       }
     }
     this.activeElementsByPtrId.set(event.pointerId, target);
-    this.lastCanvasLayer.focus();
+    this.canvasContainer.nativeElement.focus();
     event.stopPropagation();
     event.preventDefault();
   }
@@ -405,8 +416,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
         this.singleClickEvent.emit({
           browserEvent: event,
           target: target.element,
-          pointerX: target.pointerX,
-          pointerY: target.pointerY,
+          pointerPos: target.pointerPos,
         });
       } else if (pointerDrags) {
         this.draggedPointerIds.delete(event.pointerId);
@@ -415,8 +425,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
             browserEvent: event,
             from: activeTarget.element,
             to: target.element,
-            pointerX: target.pointerX,
-            pointerY: target.pointerY,
+            pointerPos: target.pointerPos,
           });
         }
       }
@@ -436,16 +445,16 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     this.doubleClickEvent.emit({
       browserEvent: event,
       target: target.element,
-      pointerX: target.pointerX,
-      pointerY: target.pointerY,
+      pointerPos: target.pointerPos,
     });
     event.stopPropagation();
     event.preventDefault();
-    this.lastCanvasLayer.focus();
+    this.canvasContainer.nativeElement.focus();
   }
 
   private onPointerLeave(event: PointerEvent) {
     this.boundOnPointerUp(event);
+    this.pointerLeaveEvent.emit(event);
   }
 
   private updateDeferredLayerIndices(layer: GridLayerState) {
@@ -471,15 +480,12 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     if (this.fpsThrottle === undefined || fps < this.fpsThrottle) {
       for (let i = 0; i < this._layerCount(); ++i) {
         let layer = this._layers()[i];
+        if (layer.hidden()) {
+          continue;
+        }
         if (layer.redrawAll || layer.redrawPerFrame) {
           const fns = layer.drawFn;
           const isCellFnType = fns.type === PerCellDrawType;
-          this.contexts[i].clearRect(
-            0,
-            0,
-            this._canvasWidth(),
-            this._canvasHeight()
-          );
           if (isCellFnType) {
             this.updateDeferredLayerIndices(layer);
             this.cells().forEach((cell) => {
@@ -504,7 +510,6 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
             this.redrawIndices.forEach((index) => {
               if (index < this._length()) {
                 const cell = this.cells()[index];
-                this.contexts[i].clearRect(cell.x, cell.y, cell.w, cell.h);
                 fns.drawFn(this.contexts[i], cell, this.state, i);
               }
             });
@@ -518,10 +523,12 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
     requestAnimationFrame((time: DOMHighResTimeStamp) => this.render(time));
   }
 
-  private getTargetFromEvent(
-    event: PointerEvent
-  ): { element: CanvasGridElement } & PointerPixelPos {
-    const boundingRect = this.lastCanvasLayer.getBoundingClientRect();
+  private getTargetFromEvent(event: PointerEvent): {
+    element: CanvasGridElement;
+    pointerPos: PixelPos;
+  } {
+    const boundingRect =
+      this.canvasContainer.nativeElement.getBoundingClientRect();
     const x = Math.min(
       Math.max(event.clientX - boundingRect.x, 0),
       boundingRect.width
@@ -546,8 +553,7 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
       const index = rowI.value * this._cols() + colI.value;
       return {
         element: this.cells()[index],
-        pointerX: x,
-        pointerY: y,
+        pointerPos: { x: x, y: y },
       };
     }
     if (colI.type === 'gap' && rowI.type === 'gap') {
@@ -557,14 +563,19 @@ export class NgxCanvasGridComponent implements AfterViewInit, OnDestroy {
           colGap: this._colGaps()[colI.value],
           rowGap: this._rowGaps()[rowI.value],
         },
-        pointerX: x,
-        pointerY: y,
+        pointerPos: { x: x, y: y },
       };
     }
     if (colI.type === 'gap') {
-      return { element: this._colGaps()[colI.value], pointerX: x, pointerY: y };
+      return {
+        element: this._colGaps()[colI.value],
+        pointerPos: { x: x, y: y },
+      };
     }
-    return { element: this._rowGaps()[rowI.value], pointerX: x, pointerY: y };
+    return {
+      element: this._rowGaps()[rowI.value],
+      pointerPos: { x: x, y: y },
+    };
   }
 
   private findTargetCoordinate(

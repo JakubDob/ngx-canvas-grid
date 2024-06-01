@@ -1,3 +1,4 @@
+import { signal } from '@angular/core';
 import {
   CanvasGridCellDrawFn,
   CanvasGridLayerDrawFn,
@@ -105,6 +106,10 @@ export class LayerController {
     }
   }
 
+  hidden(layerIndex: number, value: boolean) {
+    this._layers[layerIndex].hidden.set(value);
+  }
+
   public static Builder = class implements LayerBuilder {
     #controller = new LayerController();
 
@@ -117,6 +122,7 @@ export class LayerController {
         drawFn: { drawFn: drawFn, type: PerCellDrawType },
         redrawAll: false,
         redrawPerFrame: false,
+        hidden: signal(false),
         multiFrameCellIndices: new Set(),
         singleFrameCellIndices: new Set(),
         multiFrameCellGridPos: [],
@@ -131,6 +137,7 @@ export class LayerController {
         drawFn: { drawFn: drawFn, type: WholeCanvasDrawType },
         redrawAll: false,
         redrawPerFrame: false,
+        hidden: signal(false),
         multiFrameCellIndices: new Set(),
         singleFrameCellIndices: new Set(),
         multiFrameCellGridPos: [],

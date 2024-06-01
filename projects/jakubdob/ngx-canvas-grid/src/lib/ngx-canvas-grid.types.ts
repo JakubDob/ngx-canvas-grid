@@ -1,4 +1,4 @@
-import { InjectionToken, Signal } from '@angular/core';
+import { InjectionToken, Signal, WritableSignal } from '@angular/core';
 
 export const CellType = 'cell';
 export const GapType = 'gap';
@@ -22,11 +22,6 @@ export type CanvasGridState = {
 export type PixelPos = {
   x: number;
   y: number;
-};
-
-export type PointerPixelPos = {
-  pointerX: number;
-  pointerY: number;
 };
 
 export type GridPos = {
@@ -65,34 +60,41 @@ export type CanvasGridElement = GridCell | GridGap | GridGapPair;
 export type CanvasGridMoveEvent = {
   browserEvent: PointerEvent;
   target: CanvasGridElement;
-} & PointerPixelPos;
+  pointerPos: PixelPos;
+};
 
 export type CanvasGridDragEvent = {
   browserEvent: PointerEvent;
   from: CanvasGridElement;
+  fromPixels: PixelPos;
   to: CanvasGridElement;
-} & PointerPixelPos;
+  pointerPos: PixelPos;
+};
 
 export type CanvasGridDropEvent = {
   browserEvent: PointerEvent;
   from: CanvasGridElement;
   to: CanvasGridElement;
-} & PointerPixelPos;
+  pointerPos: PixelPos;
+};
 
 export type CanvasGridDoubleClickEvent = {
   browserEvent: MouseEvent;
   target: CanvasGridElement;
-} & PointerPixelPos;
+  pointerPos: PixelPos;
+};
 
 export type CanvasGridClickEvent = {
   browserEvent: PointerEvent;
   target: CanvasGridElement;
-} & PointerPixelPos;
+  pointerPos: PixelPos;
+};
 
 export type CanvasGridContextMenuEvent = {
   browserEvent: MouseEvent;
   target: CanvasGridElement;
-} & PointerPixelPos;
+  pointerPos: PixelPos;
+};
 
 export type CanvasGridCellDrawFn = (
   context: CanvasRenderingContext2D,
@@ -130,6 +132,7 @@ export type GridLayerState = {
   delMultiFrameCellGridPos: GridPos[];
   redrawAll: boolean;
   redrawPerFrame: boolean;
+  hidden: WritableSignal<boolean>;
   drawFn: CanvasGridDrawFn;
 };
 
