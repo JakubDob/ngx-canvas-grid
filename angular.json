@@ -58,7 +58,12 @@
               "projects/ngx-canvas-grid-demo/src/assets"
             ],
             "styles": ["projects/ngx-canvas-grid-demo/src/styles.scss"],
-            "scripts": []
+            "scripts": [],
+            "stylePreprocessorOptions": {
+              "includePaths": [
+                "projects/ngx-canvas-grid-demo/src/assets/styles"
+              ]
+            }
           },
           "configurations": {
             "production": {
