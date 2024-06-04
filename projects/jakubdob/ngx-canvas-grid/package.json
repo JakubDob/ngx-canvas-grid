@@ -10,8 +10,7 @@
   "homepage": "https://github.com/JakubDob/ngx-canvas-grid",
   "repository": {
     "type": "git",
-    "url": "https://github.com/JakubDob/ngx-canvas-grid.git",
-    "directory": "projects/jakubdob/ngx-canvas-grid"
+    "url": "https://github.com/JakubDob/ngx-canvas-grid.git"
   },
   "dependencies": {
     "tslib": "^2.3.0"

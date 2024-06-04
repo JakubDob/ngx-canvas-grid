@@ -5,8 +5,17 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
+    "build:lib": "ng build @jakubdob/ngx-canvas-grid",
+    "build:lib:prod": "ng build @jakubdob/ngx-canvas-grid --configuration=production",
+    "build:demo": "npm run build:lib:prod && ng build ngx-canvas-grid-demo --configuration=production --base-href=/\"ngx-canvas-grid\"/",
+    "copy:license": "copy LICENSE dist\\ngx-canvas-grid",
+    "copy:readme": "copy README.md dist\\ngx-canvas-grid",
+    "copy:files": "npm run copy:license && npm run copy:readme",
+    "package": "npm run build:lib:prod && npm run copy:files",
+    "prepack": "npm run package",
+    "pack": "npm pack ./dist/ngx-canvas-grid",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test @jakubdob/ngx-canvas-grid --watch=false"
   },
   "private": true,
   "dependencies": {
