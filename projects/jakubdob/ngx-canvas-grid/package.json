@@ -2,15 +2,20 @@
   "name": "@jakubdob/ngx-canvas-grid",
   "version": "0.0.1",
   "description": "An Angular library for creating multi-layered, canvas-based, grid-like views.",
-  "peerDependencies": {
-    "@angular/common": "^17.1.0",
-    "@angular/core": "^17.1.0"
-  },
-  "license": "MIT",
-  "homepage": "https://github.com/JakubDob/ngx-canvas-grid",
   "repository": {
     "type": "git",
     "url": "https://github.com/JakubDob/ngx-canvas-grid.git"
+  },
+  "keywords": [
+    "angular",
+    "canvas",
+    "grid"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/JakubDob/ngx-canvas-grid",
+  "peerDependencies": {
+    "@angular/common": "^17.1.0",
+    "@angular/core": "^17.1.0"
   },
   "dependencies": {
     "tslib": "^2.3.0"
